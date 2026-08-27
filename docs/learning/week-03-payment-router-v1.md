@@ -153,3 +153,20 @@ funds. It is not: the Router can never have a token balance.
 At the end of Week 3, the useful skill is not memorizing the function signature.
 It is being able to state which contract owns each piece of state, which step
 can fail, what an event proves, and where reconciliation must remain skeptical.
+
+## Verification evidence
+
+The Week 3 implementation is commit
+[`9daef77`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/9daef77653218ebe826d489312c2f8fc8d3c6c8a).
+On 2026-08-28, the supported Windows verification entry point passed 15 .NET
+tests, 32 Foundry tests across five suites, the real successful/reverted Anvil
+observation, the dynamic Gitleaks canary, the working-tree scan, and the complete
+pre-commit Git history scan. The production `PaymentRouter` runtime remained
+1,030 bytes because Week 3 changed tests and documentation, not its bytecode.
+
+GitHub Actions run
+[`33127124223`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33127124223)
+then passed all three jobs: locked .NET build/tests, secret scanning, and Foundry
+build/tests plus the disposable-Anvil RPC observation on Ubuntu. This evidence
+supports the bounded teaching claims above; it is not an audit, public-chain
+deployment, accepted-token policy, or production authorization.
