@@ -149,6 +149,12 @@ Those sections are evidence for the following relationships:
 
 Transaction hashes, contract addresses, block numbers, gas usage, gas prices, and elapsed time can vary between runs. The script asserts their relationships and types, not one captured set of incidental values.
 
+## Verification evidence
+
+Week 2 implementation commit [`19e61c5`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/19e61c532bb557fe91b27f88cde7b3ff1df30b56) passed the repository's full local verification on Windows: 15 .NET tests, 31 Foundry tests, the live success/revert observation, the dynamic secret-scanner canary, the working-tree scan, and the complete pre-commit Git history scan.
+
+GitHub Actions run [`33102551138`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33102551138) then passed all three jobs. In particular, `Foundry build, tests and RPC observation` ran the same observer through Linux PowerShell against repository-local Anvil `v1.7.1`. This is reproducibility evidence for the exercise, not a public-network deployment or security audit.
+
 ## A receipt is not finality
 
 A successful receipt proves inclusion and execution in one particular block. On a public chain, that block can still be replaced by a reorganization. A production indexer must track the receipt's block hash against the canonical chain, wait for a chain-specific confirmation or finality policy, and reverse prior observations when necessary.
