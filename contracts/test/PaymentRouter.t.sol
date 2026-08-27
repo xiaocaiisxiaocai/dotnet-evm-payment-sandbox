@@ -7,6 +7,7 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {PaymentRouter} from "../src/PaymentRouter.sol";
 import {FalseReturnToken} from "./fixtures/FalseReturnToken.sol";
+import {FeeOnTransferToken} from "./fixtures/FeeOnTransferToken.sol";
 import {NoReturnToken} from "./fixtures/NoReturnToken.sol";
 import {PaymentRouterTestBase} from "./helpers/PaymentRouterTestBase.sol";
 
@@ -25,12 +26,16 @@ contract PaymentRouterTest is PaymentRouterTestBase {
 
         assertEq(usdc.balanceOf(payer), INITIAL_USDC_BALANCE - amount);
         assertEq(usdc.balanceOf(merchant), amount);
+        assertEq(usdc.allowance(payer, address(router)), 0, "the exact allowance must be consumed");
         assertEq(usdc.balanceOf(address(router)), 0, "the Router must not custody payment funds");
     }
 
     function test_paySupportsSixAndEighteenDecimalTokensWithoutConversion() public {
         uint256 oneUsdc = 1_000_000;
         uint256 oneToken18 = 10 ** uint256(token18.decimals());
+
+        assertEq(usdc.decimals(), 6);
+        assertEq(token18.decimals(), 18);
 
         _approveAndPay(usdc, PAYMENT_ID, oneUsdc);
 
@@ -54,6 +59,7 @@ contract PaymentRouterTest is PaymentRouterTestBase {
         vm.expectEmit(true, true, true, true, address(router));
         emit PaymentRecorded(PAYMENT_ID, payer, address(usdc), merchant, firstPart);
         router.pay(PAYMENT_ID, address(usdc), merchant, firstPart);
+        assertEq(usdc.allowance(payer, address(router)), secondPart);
 
         vm.expectEmit(true, true, true, true, address(router));
         emit PaymentRecorded(PAYMENT_ID, payer, address(usdc), merchant, secondPart);
@@ -61,6 +67,8 @@ contract PaymentRouterTest is PaymentRouterTestBase {
         vm.stopPrank();
 
         assertEq(usdc.balanceOf(merchant), firstPart + secondPart);
+        assertEq(usdc.allowance(payer, address(router)), 0);
+        assertEq(usdc.balanceOf(address(router)), 0);
     }
 
     function test_payAllowsAnExactRepeatedPaymentIdAndAmount() public {
@@ -73,6 +81,8 @@ contract PaymentRouterTest is PaymentRouterTestBase {
         vm.stopPrank();
 
         assertEq(usdc.balanceOf(merchant), amount * 2);
+        assertEq(usdc.allowance(payer, address(router)), 0);
+        assertEq(usdc.balanceOf(address(router)), 0);
     }
 
     function test_payRevertsWithoutAllowance() public {
@@ -96,6 +106,13 @@ contract PaymentRouterTest is PaymentRouterTestBase {
         );
         vm.prank(payer);
         router.pay(PAYMENT_ID, address(usdc), merchant, amount);
+
+        // transferFrom may inspect or update allowance before the balance check.
+        // A revert must roll every token-side change back atomically.
+        assertEq(usdc.allowance(payer, address(router)), amount);
+        assertEq(usdc.balanceOf(payer), INITIAL_USDC_BALANCE);
+        assertEq(usdc.balanceOf(merchant), 0);
+        assertEq(usdc.balanceOf(address(router)), 0);
     }
 
     function test_failedPaymentLeavesNoRecordedLogs() public {
@@ -177,5 +194,31 @@ contract PaymentRouterTest is PaymentRouterTestBase {
         assertEq(noReturnToken.balanceOf(payer), 0);
         assertEq(noReturnToken.balanceOf(merchant), amount);
         assertEq(noReturnToken.balanceOf(address(router)), 0);
+    }
+
+    function test_payRecordsRequestedAmountButCannotValidateFeeOnTransferDelivery() public {
+        FeeOnTransferToken feeToken = new FeeOnTransferToken();
+        uint256 amount = 10_000;
+        uint256 fee = amount / 100;
+        uint256 merchantReceives = amount - fee;
+        feeToken.mint(payer, amount);
+
+        vm.prank(payer);
+        feeToken.approve(address(router), amount);
+
+        // SafeERC20 sees a successful `true` return, so the Router records the
+        // requested gross amount. Only token-specific evidence reveals that the
+        // merchant actually received less after the token burned its fee.
+        vm.expectEmit(true, true, true, true, address(router));
+        emit PaymentRecorded(PAYMENT_ID, payer, address(feeToken), merchant, amount);
+
+        vm.prank(payer);
+        router.pay(PAYMENT_ID, address(feeToken), merchant, amount);
+
+        assertEq(feeToken.balanceOf(payer), 0);
+        assertEq(feeToken.balanceOf(merchant), merchantReceives);
+        assertLt(feeToken.balanceOf(merchant), amount, "PaymentRecorded is not proof of exact delivery");
+        assertEq(feeToken.allowance(payer, address(router)), 0);
+        assertEq(feeToken.balanceOf(address(router)), 0);
     }
 }
