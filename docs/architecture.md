@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the small architecture that exists in Week 1; and
+1. the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Current Gate A architecture
+## Accepted Gate A architecture
 
 ```mermaid
 flowchart LR
@@ -31,7 +31,7 @@ flowchart LR
     CI --> SecretScan
 ```
 
-There is no .NET runtime application in the current milestone. The Domain project does not call the contracts, and no RPC adapter connects the two build systems. Their only repository-level integration is the shared verification contract: a fresh checkout must restore, build, test, and scan without a key or RPC credential.
+There is no .NET runtime application in the accepted baseline. The Domain project does not call the contracts, and no RPC adapter connects the two build systems. Their repository-level integration is the shared verification contract: a fresh checkout must restore, build, test, and scan without a key or RPC credential. Gate A exercised that contract from an isolated Windows clone and in remote CI.
 
 ### Build and dependency boundary
 
@@ -90,15 +90,15 @@ The later transaction orchestrator is a separate, test-only capability. It must 
 
 ## Planned component responsibilities
 
-| Component | Owns | Must not own |
-| --- | --- | --- |
-| `PaymentSandbox.Domain` | Value objects, states, invariants, policy inputs | RPC, SQL, HTTP, signing, environment configuration |
-| `PaymentSandbox.Contracts` | Generated ABI types and narrow contract client adapters | Business settlement decisions, private keys |
-| `PaymentSandbox.Api` | Payment intent use cases, validation, idempotent HTTP boundary | Chain history truth, direct key material |
-| `PaymentSandbox.Indexer` | Block/log ingestion, checkpoints, canonical occurrences, reorg handling | Mutating chain state, overwriting history |
-| `PaymentSandbox.Orchestrator` | Test-only transaction requests, attempts, nonce coordination, replacement history | Custody claims, arbitrary signing |
-| Ledger/reconciliation | Append-only business effects, reversals, explainable differences | Treating a wallet balance as an accounting ledger |
-| Solidity contracts | Direct payer-to-merchant transfer, exact permit path, and payment event semantics | Accepted-token policy, off-chain invoices, finality, reconciliation, custody |
+| Component                     | Owns                                                                              | Must not own                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `PaymentSandbox.Domain`       | Value objects, states, invariants, policy inputs                                  | RPC, SQL, HTTP, signing, environment configuration                           |
+| `PaymentSandbox.Contracts`    | Generated ABI types and narrow contract client adapters                           | Business settlement decisions, private keys                                  |
+| `PaymentSandbox.Api`          | Payment intent use cases, validation, idempotent HTTP boundary                    | Chain history truth, direct key material                                     |
+| `PaymentSandbox.Indexer`      | Block/log ingestion, checkpoints, canonical occurrences, reorg handling           | Mutating chain state, overwriting history                                    |
+| `PaymentSandbox.Orchestrator` | Test-only transaction requests, attempts, nonce coordination, replacement history | Custody claims, arbitrary signing                                            |
+| Ledger/reconciliation         | Append-only business effects, reversals, explainable differences                  | Treating a wallet balance as an accounting ledger                            |
+| Solidity contracts            | Direct payer-to-merchant transfer, exact permit path, and payment event semantics | Accepted-token policy, off-chain invoices, finality, reconciliation, custody |
 
 Dependencies point inward toward Domain. Infrastructure implements interfaces defined around use cases; Domain does not import an infrastructure SDK to make an adapter convenient.
 
@@ -127,7 +127,7 @@ Future code must treat the following as untrusted input:
 - Database state that cannot be traced to a migration and source observation.
 - Any secret found in source control; committing a key makes it compromised, not merely misplaced.
 
-Week 1 CI intentionally needs no RPC endpoint or signing secret. See [Threat model](threat-model.md) for the active controls.
+Gate A CI intentionally needs no RPC endpoint or signing secret. See [Threat model](threat-model.md) for the active controls.
 
 ## Verification boundary
 
@@ -135,7 +135,7 @@ The supported local verification entry point is `scripts/verify.ps1`. CI runs eq
 
 Direct .NET verification uses locked restore followed by build and test without a second restore. Direct Foundry verification uses format checking, build, and tests under `contracts/`.
 
-The latest local evidence on 2026-08-28 is 5 Foundry suites with 31 passed, 0 failed, and 0 skipped tests, including 256-input fuzz cases and two invariants at 64 runs by 2,048 calls. The local deployment script also broadcast successfully to Anvil and rejects any chain ID other than `31337`. Gate A remains in progress until fresh-checkout and remote CI acceptance are observed, and neither result establishes production readiness.
+Gate A was accepted on 2026-08-28 at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588) passed its .NET, Foundry, and secret-scan jobs. An isolated Windows clone completed 15 .NET tests, 5 Foundry suites with 31 passing tests, a clean scan of the complete two-commit history, and a real Anvil `31337` broadcast of all three local contracts in 418.19 seconds. These results accept the repository foundation only; they do not establish production readiness. The detailed measurements and the corrected first-run CI failure are recorded in [Gate A acceptance](acceptance/gate-a.md).
 
 ## Change rules
 

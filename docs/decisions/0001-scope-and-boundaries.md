@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-27
 - **Decision owners:** Repository maintainers
+- **Gate A evidence:** [Accepted on 2026-08-28](../acceptance/gate-a.md)
 
 ## Context
 
@@ -23,7 +24,7 @@ We will build one test-only EVM payment sandbox under the following boundaries:
 7. Add API, contract adapters, indexing, ledger, orchestration, and authentication only in their scheduled milestone, with failure tests and updated boundary documentation.
 8. Treat a successful test as evidence for the tested behavior only. It is not a security audit, custody approval, or production deployment authorization.
 
-The current working tree implements the repository foundation, two domain values, a test-only non-custodial Router, six- and eighteen-decimal test tokens, permit tests, failure tests, fuzz tests, invariant tests, local Anvil deployment, and CI security guardrails. The local contract evidence is 31 passing Foundry tests and a successful real Anvil broadcast. Implementing this evidence ahead of the weekly schedule does not waive acceptance: Gate A remains in progress until fresh-checkout and remote CI criteria pass.
+The accepted baseline implements the repository foundation, two domain values, a test-only non-custodial Router, six- and eighteen-decimal test tokens, permit tests, failure tests, fuzz tests, invariant tests, local Anvil deployment, and CI security guardrails. Gate A was accepted at commit `cb5b5f6` after remote CI passed all three jobs and an isolated Windows clone passed 15 .NET tests, 31 Foundry tests, the complete two-commit history scan, and a real Anvil broadcast. Early implementation did not waive the criteria; it allowed those criteria to be exercised before the scheduled end of Gate A.
 
 ## Consequences
 
@@ -33,7 +34,7 @@ The current working tree implements the repository foundation, two domain values
 - Domain invariants can be learned and tested without RPC or wallet complexity.
 - Later infrastructure can be replaced without contaminating business types.
 - Toolchain drift and dependency drift become visible review events.
-- No secret is required to build or test the Week 1 repository.
+- No secret is required to build or test the accepted Gate A baseline.
 
 ### Costs
 

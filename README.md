@@ -7,11 +7,11 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Week 1 foundation, Gate A in progress.
+**Current milestone:** Gate A accepted on 2026-08-28; Week 2 is next.
 
-Gate A spans Weeks 1-4. Its contract code and automated failure cases are already present in the working tree, but Gate A is not claimed as complete until the final fresh-checkout and CI acceptance checks have been observed.
+Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. The weekly learning sequence continues with Week 2 even though later Gate A code is already present.
 
-Implemented in the current Gate A working tree:
+Implemented in the accepted Gate A baseline:
 
 - .NET SDK `10.0.400`, C# `14.0`, and Microsoft Testing Platform are pinned.
 - NuGet versions are centrally managed and transitive dependency lock files are committed.
@@ -22,7 +22,7 @@ Implemented in the current Gate A working tree:
 - `payWithPermit` supports a deliberately non-relayed ERC-2612 path where owner is `msg.sender`, spender is the Router, and permit value equals the payment amount.
 - Six- and eighteen-decimal test tokens, a local deployment script, example-based tests, permit tests, fuzz tests, and invariant tests exercise the contract boundary.
 - The Foundry toolchain is pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
-- Local verification and CI definitions check the .NET build, Foundry build/tests, and committed secrets. A remote CI result is not assumed by this README.
+- Local verification and remote CI check the locked .NET build/tests, Foundry formatting/build/tests, and committed secrets. Accepted CI run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588) passed all three jobs.
 
 Deliberately not implemented yet:
 
@@ -38,25 +38,25 @@ Deliberately not implemented yet:
 
 - Windows 10 or later.
 - Git with submodule support.
-- PowerShell 7 (`pwsh`).
+- Windows PowerShell 5.1 or PowerShell 7 (`pwsh`).
 - .NET SDK `10.0.400`. The repository intentionally rejects a different SDK feature band.
 - Internet access for dependency restore, the checksum-verified Foundry install, and the default Gitleaks scan.
 
 ### Clone and verify
 
 ```powershell
-git clone --recurse-submodules <repository-url>
+git clone --recurse-submodules https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox.git
 Set-Location .\dotnet-evm-payment-sandbox
 
 # Safe to repeat if the repository was cloned without --recurse-submodules.
 git submodule update --init --recursive
 
 dotnet --version
-pwsh -File .\scripts\install-foundry.ps1
-pwsh -File .\scripts\verify.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-foundry.ps1 -AddToPath
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
 ```
 
-The expected SDK output is `10.0.400`. The verification script is the preferred local entry point because it mirrors the repository's CI checks.
+The expected SDK output is `10.0.400`. With PowerShell 7, the script commands can instead use `pwsh -File ./scripts/install-foundry.ps1 -AddToPath` and `pwsh -File ./scripts/verify.ps1`. The verification script is the preferred local entry point because it mirrors the repository's CI checks and uses the repository-local Foundry binary directly.
 
 To run the .NET checks directly:
 
@@ -77,23 +77,24 @@ $forge = '.\.tools\foundry\v1.7.1\forge.exe'
 
 `scripts/verify.ps1 -SkipSecretScan` exists for an explicitly degraded offline run. Its warning is intentional: a run that skips secret scanning is not sufficient Gate A evidence.
 
-Do not add a private key to `.env.example`, source files, command history, test fixtures, or CI variables. Week 1 does not require any key.
+Do not add a private key to `.env.example`, source files, command history, test fixtures, or CI variables. Gate A verification does not require any key.
 
 ## Repository map
 
-| Path | Current responsibility |
-| --- | --- |
-| `global.json` | Selects the exact .NET SDK and Microsoft Testing Platform runner. |
-| `Directory.Build.props` | Applies common compiler, warning, deterministic-build, and lock-file rules. |
-| `Directory.Packages.props` | Owns reviewed NuGet versions; project files do not choose versions. |
-| `PaymentSandbox.slnx` | Contains the current Domain and Domain test projects. |
-| `src/PaymentSandbox.Domain/` | Pure domain values and invariants; no RPC, database, ASP.NET, or signer dependencies. |
-| `tests/PaymentSandbox.Domain.Tests/` | Executable specifications for the Domain project. |
-| `contracts/` | Independent Foundry workspace containing the test-only Router, test tokens, local deployment script, and contract tests. |
-| `scripts/verify.ps1` | Runs the supported local verification sequence. |
-| `docs/architecture.md` | Separates the current Week 1 architecture from the planned payment flow. |
-| `docs/threat-model.md` | Records protected assets, trust boundaries, threats, and current controls. |
-| `docs/decisions/` | Records architectural decisions and their trade-offs. |
+| Path                                 | Current responsibility                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `global.json`                        | Selects the exact .NET SDK and Microsoft Testing Platform runner.                                                        |
+| `Directory.Build.props`              | Applies common compiler, warning, deterministic-build, and lock-file rules.                                              |
+| `Directory.Packages.props`           | Owns reviewed NuGet versions; project files do not choose versions.                                                      |
+| `PaymentSandbox.slnx`                | Contains the current Domain and Domain test projects.                                                                    |
+| `src/PaymentSandbox.Domain/`         | Pure domain values and invariants; no RPC, database, ASP.NET, or signer dependencies.                                    |
+| `tests/PaymentSandbox.Domain.Tests/` | Executable specifications for the Domain project.                                                                        |
+| `contracts/`                         | Independent Foundry workspace containing the test-only Router, test tokens, local deployment script, and contract tests. |
+| `scripts/verify.ps1`                 | Runs the supported local verification sequence.                                                                          |
+| `docs/architecture.md`               | Separates the accepted Gate A architecture from the planned payment flow.                                                |
+| `docs/acceptance/gate-a.md`          | Records the Gate A criteria, observed runs, timing, and non-production boundary.                                         |
+| `docs/threat-model.md`               | Records protected assets, trust boundaries, threats, and current controls.                                               |
+| `docs/decisions/`                    | Records architectural decisions and their trade-offs.                                                                    |
 
 ## Current model
 
@@ -107,7 +108,7 @@ The Router intentionally permits repeated `PaymentId` values. Partial, supplemen
 
 An ERC-2612 permit authorizes allowance only. In this sample it does not sign the merchant or payment ID and it does not support a relayer. The caller is therefore still the payer. A third party can submit a public permit directly to the token first and consume its nonce, causing this strict combined path to fail closed; this known denial-of-service limitation does not let that party choose the payment destination.
 
-Latest local contract evidence on 2026-08-28: Foundry `v1.7.1` built a 1,030-byte Router runtime; 5 suites completed with 31 passed, 0 failed, and 0 skipped tests; fuzz cases ran 256 inputs each; two invariants ran 64 runs by 2,048 calls with no reverts; and `DeployLocal` broadcast successfully to a real Anvil process. Fresh-checkout and remote CI acceptance are still pending.
+Gate A acceptance evidence on 2026-08-28 includes 15 passing .NET tests, 5 Foundry suites with 31 passed and no failed or skipped tests, a clean two-commit Git history scan, and a real Anvil `31337` broadcast of `PaymentRouter`, `TestUSDC`, and `TestToken18`. The isolated Windows sequence took 418.19 seconds (6 minutes 58.19 seconds), and remote CI run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588) passed all three jobs. Foundry `v1.7.1` produced a 1,030-byte Router runtime; fuzz cases ran 256 inputs each, and two invariants ran 64 runs by 2,048 calls with no reverts. See the [Gate A acceptance record](docs/acceptance/gate-a.md) for the measured steps and the initial CI failure that preceded acceptance.
 
 ## Architecture rules
 
@@ -118,19 +119,21 @@ Latest local contract evidence on 2026-08-28: Foundry `v1.7.1` built a 1,030-byt
 - A payment identifier correlates evidence; it never authorizes value movement.
 - Raw on-chain values remain exact integers. Formatting is an edge concern.
 
-See [Architecture](docs/architecture.md) and [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md) for the rationale.
+See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), and the [Gate A acceptance record](docs/acceptance/gate-a.md) for the rationale and evidence.
 
 ## Roadmap
 
-| Weeks | Planned outcome |
-| --- | --- |
-| 1-4 | Complete Gate A: foundations, `TestUSDC`, non-custodial `PaymentRouter`, failure tests, local deployment, and fresh-clone verification. |
-| 5-12 | Add typed Nethereum access, Payment Intent API, reorg-safe indexing, append-only ledger, finality, and reconciliation. |
-| 13-19 | Add a test-only transaction lifecycle orchestrator, SIWE, and separate EIP-712/permit replay controls. |
-| 20-24 | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release. |
+| Stage              | Outcome                                                                                                                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gate A / Weeks 1-4 | **Accepted early on 2026-08-28:** foundations, `TestUSDC`, non-custodial `PaymentRouter`, failure/fuzz/invariant tests, local deployment, CI, and Windows fresh-clone verification. |
+| Week 2 next        | Use the accepted Foundry workspace to study transactions, receipts, logs, gas, deployment, and revert behavior; acceptance does not remove the learning work.                       |
+| Weeks 3-4          | Deepen review of the already-present Router and hardening evidence while preserving the accepted baseline.                                                                          |
+| Weeks 5-12         | Add typed Nethereum access, Payment Intent API, reorg-safe indexing, append-only ledger, finality, and reconciliation.                                                              |
+| Weeks 13-19        | Add a test-only transaction lifecycle orchestrator, SIWE, and separate EIP-712/permit replay controls.                                                                              |
+| Weeks 20-24        | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                          |
 
 Each later capability must arrive with its failure cases and boundary documentation. A roadmap item is not an implemented feature.
 
 ## Production boundary
 
-Passing the repository tests will demonstrate a bounded sample, not authorization to operate customer funds. Production use would require a separate threat model and review of custody, access control, key management, deployment ownership, monitoring, incident response, legal jurisdiction, dependency provenance, chain-specific finality, and operational limits.
+The accepted Gate A evidence demonstrates a bounded sample, not authorization to operate customer funds. Production use would require a separate threat model and review of custody, access control, key management, deployment ownership, monitoring, incident response, legal jurisdiction, dependency provenance, chain-specific finality, and operational limits.
