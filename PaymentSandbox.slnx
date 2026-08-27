@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PaymentSandbox.Domain/PaymentSandbox.Domain.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PaymentSandbox.Domain.Tests/PaymentSandbox.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

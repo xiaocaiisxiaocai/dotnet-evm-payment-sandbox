@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- Shared framework and compiler settings are defined in Directory.Build.props. -->
+</Project>

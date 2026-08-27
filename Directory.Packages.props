@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <!-- Package versions have one review point for the whole solution. -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageVersionOverrideEnabled>false</CentralPackageVersionOverrideEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+
+    <!--
+      Reserved for the chain adapter introduced later in the roadmap. Keeping
+      it here documents the reviewed version; the Domain project does not use it.
+    -->
+    <PackageVersion Include="Nethereum.Web3" Version="6.1.0" />
+  </ItemGroup>
+</Project>

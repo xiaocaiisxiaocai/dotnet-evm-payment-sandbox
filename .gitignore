@@ -1,0 +1,51 @@
+# .NET build and test output
+**/bin/
+**/obj/
+TestResults/
+artifacts/
+coverage/
+*.coverage
+*.coveragexml
+
+# IDE and editor state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Foundry build and runtime output
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lcov.info
+
+# Repository-local tool downloads
+.tools/
+
+# Local application data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment files may contain RPC credentials or private keys.
+.env
+.env.*
+!.env.example
+!*.env.example
+
+# Common secret and wallet material
+*.key
+*.pem
+*.pfx
+*.p12
+*.keystore
+UTC--*
+appsettings.Local.json
+secrets.json
+
+# OS noise
+.DS_Store
+Thumbs.db
+Desktop.ini

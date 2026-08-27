@@ -1,0 +1,28 @@
+title = "PaymentSandbox secret scanning policy"
+
+# Keep the Gitleaks 8.29.1 defaults and add Web3-specific plaintext formats.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "evm-private-key-assignment"
+description = "EVM private key assigned to a key-like setting"
+regex = '''(?i)(private[_-]?key|wallet[_-]?key|signer[_-]?key)[[:space:]]*[:=][[:space:]]*["']?(0x)?[0-9a-f]{64}["']?'''
+tags = ["web3", "private-key"]
+
+[[rules]]
+id = "wallet-mnemonic-assignment"
+description = "Wallet mnemonic or seed phrase assigned as plaintext"
+regex = '''(?i)(mnemonic|seed[_ -]?phrase)[[:space:]]*[:=][[:space:]]*["']?[a-z]+([[:space:]]+[a-z]+){11,23}["']?'''
+tags = ["web3", "mnemonic"]
+
+# Exclude only third-party dependencies, Git metadata, local tools, and generated output.
+# Application code, tests, docs, and sample configuration remain in scope.
+[[allowlists]]
+description = "Generated files and pinned third-party dependency trees"
+paths = [
+  '''(^|[\\/])\.git([\\/]|$)''',
+  '''(^|[\\/])\.tools([\\/]|$)''',
+  '''(^|[\\/])contracts[\\/]lib([\\/]|$)''',
+  '''(^|[\\/])(bin|obj|out|cache|TestResults)([\\/]|$)''',
+]

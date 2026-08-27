@@ -1,0 +1,27 @@
+# Normalize source and configuration files so hashes do not vary by OS.
+* text=auto
+.editorconfig text eol=lf
+.env.example text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.gitleaks.toml text eol=lf
+.gitmodules text eol=lf
+*.cs text eol=lf
+*.csproj text eol=lf
+*.props text eol=lf
+*.slnx text eol=lf
+*.sol text eol=lf
+*.txt text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.ps1 text eol=lf
+
+# Archives and images are binary and must never be line-ending normalized.
+*.zip binary
+*.gz binary
+*.png binary
+*.jpg binary
+*.jpeg binary
