@@ -62,7 +62,7 @@ jobs:
           --no-restore
 
   foundry:
-    name: Foundry formatting, build and tests
+    name: Foundry build, tests and RPC observation
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -101,6 +101,12 @@ jobs:
       - name: Test contracts
         working-directory: contracts
         run: forge test -vvv
+
+      - name: Observe a local transaction lifecycle
+        # The script owns Anvil, bounds waits, and fails CI if teardown cannot be confirmed.
+        shell: pwsh
+        timeout-minutes: 5
+        run: ./scripts/observe-week2-transaction.ps1 -Port 18545
 
   secrets:
     name: Secret scan (working rules and full history)

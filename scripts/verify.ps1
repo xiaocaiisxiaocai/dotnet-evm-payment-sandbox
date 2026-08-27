@@ -8,13 +8,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-# Windows PowerShell 5.1 can otherwise negotiate an obsolete TLS version.
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    throw 'PowerShell 7 or newer is required to run the Week 2 transaction observation.'
+}
+
+# Keep TLS 1.2 enabled for deterministic tool downloads on supported hosts.
 [System.Net.ServicePointManager]::SecurityProtocol =
     [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $solutionPath = Join-Path $repositoryRoot 'PaymentSandbox.slnx'
 $contractsDirectory = Join-Path $repositoryRoot 'contracts'
+$week2ObservationScript = Join-Path $PSScriptRoot 'observe-week2-transaction.ps1'
 $gitleaksVersion = '8.29.1'
 $runtime = [System.Runtime.InteropServices.RuntimeInformation]
 $runningOnWindows = $runtime::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
@@ -35,8 +40,8 @@ function Invoke-NativeChecked {
 
     Push-Location $WorkingDirectory
     try {
-        # Windows PowerShell 5.1 maps native stderr to non-terminating error records.
-        # Let the process finish, then use its exit code as the source of truth.
+        # Native tools may write normal diagnostics to stderr. Let the process
+        # finish, then use its exit code as the source of truth.
         $previousErrorActionPreference = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
@@ -217,7 +222,12 @@ function Remove-VerifiedTemporaryDirectory {
     }
 }
 
-foreach ($requiredPath in @($solutionPath, $contractsDirectory, (Join-Path $repositoryRoot '.gitleaks.toml'))) {
+foreach ($requiredPath in @(
+        $solutionPath,
+        $contractsDirectory,
+        $week2ObservationScript,
+        (Join-Path $repositoryRoot '.gitleaks.toml')
+    )) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
         throw "Required repository path is missing: $requiredPath"
     }
@@ -274,6 +284,10 @@ Invoke-NativeChecked -FilePath $forgePath -Arguments @('build', '--sizes') -Work
 
 Write-Step 'Run Solidity tests'
 Invoke-NativeChecked -FilePath $forgePath -Arguments @('test', '-vvv') -WorkingDirectory $contractsDirectory
+
+Write-Step 'Observe a local Week 2 transaction lifecycle'
+# The observation script bounds waits and treats a failed Anvil teardown as a verification failure.
+& $week2ObservationScript -Port 18545
 
 if ($SkipSecretScan) {
     Write-Warning 'Secret scan was explicitly skipped. This run is not sufficient evidence for Gate A.'
