@@ -263,7 +263,9 @@ Anvil observation replay from 1,126 Git-known files. The dynamic secret canary
 and working-tree/full-history scans also passed across the complete 20-commit
 history. Implementation commit
 [`60643db`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/60643db)
-records the Week 10 boundary.
+records the Week 10 boundary. GitHub Actions run
+[`33268538834`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33268538834)
+passed its locked .NET, Foundry/RPC, and secret-scan jobs.
 
 ## Architecture rules
 

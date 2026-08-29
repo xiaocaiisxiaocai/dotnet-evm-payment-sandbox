@@ -217,7 +217,10 @@ Indexer and 19 focused Ledger), 36/36 unchanged Foundry tests, the reviewed
 from 1,126 Git-known files. The dynamic secret canary and scans of the candidate
 working tree plus complete 20-commit history also passed. Implementation commit
 [`60643db`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/60643db)
-records the tested Week 10 boundary.
+records the tested Week 10 boundary. GitHub Actions run
+[`33268538834`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33268538834)
+then passed all three jobs: locked .NET build/tests, Foundry build/tests/RPC
+observation, and working-rules/full-history secret scan.
 
 ## What remains for Week 11 and later
 
