@@ -287,7 +287,9 @@ Router baseline, and successful/reverted Anvil observation replay from 1,152
 Git-known files also passed. The dynamic secret canary and working-tree/full-
 history scans passed across the complete 23-commit history. Implementation
 commit [`f8c8a69`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/f8c8a69)
-records the Week 11 boundary.
+records the Week 11 boundary. GitHub Actions run
+[`33270360367`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33270360367)
+passed its locked .NET, Foundry/RPC, and secret-scan jobs.
 
 ## Architecture rules
 

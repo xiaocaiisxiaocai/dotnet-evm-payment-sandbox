@@ -277,7 +277,10 @@ Router baseline, and successful/reverted Anvil observation replay from 1,152
 Git-known files. The dynamic secret canary, candidate working-tree scan, and
 complete 23-commit history scan found no leaks. Implementation commit
 [`f8c8a69`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/f8c8a69)
-records the boundary verified here.
+records the boundary verified here. GitHub Actions run
+[`33270360367`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33270360367)
+then passed all three jobs: locked .NET build/tests, Foundry build/tests/RPC
+observation, and working-rules/full-history secret scan.
 
 ## What remains for Week 12 and later
 
