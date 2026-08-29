@@ -247,6 +247,42 @@ public sealed class SqliteLedgerStoreTests
     }
 
     [Fact]
+    public async Task EntryReadBoundary_UsesGlobalCursorAndStreamOrder()
+    {
+        await using var temporary = new TemporaryLedgerDatabase();
+        (SqliteLedgerStore store, _) = await CreateStoreAsync(temporary);
+        PaymentRecordedObservation payment = LedgerTestData.Payment();
+        LedgerCommitResult first = await CommitChangeAsync(
+            store,
+            null,
+            1,
+            BlockCanonicality.Canonical,
+            payment);
+        await CommitChangeAsync(
+            store,
+            first.Checkpoint,
+            2,
+            BlockCanonicality.Noncanonical,
+            payment);
+
+        long highWatermark = await store.GetEntryHighWatermarkAsync(
+            TestContext.Current.CancellationToken);
+        IReadOnlyList<LedgerEntry> entries = await store.GetEntriesAsync(
+            LedgerTestData.ChainId,
+            LedgerTestData.Router,
+            afterEntryId: 0,
+            throughEntryId: highWatermark,
+            maxCount: 10,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, highWatermark);
+        Assert.Equal([1L, 2L], entries.Select(entry => entry.EntryId));
+        Assert.Equal(
+            [LedgerEntryKind.CanonicalPayment, LedgerEntryKind.CanonicalPaymentReversal],
+            entries.Select(entry => entry.Kind));
+    }
+
+    [Fact]
     public async Task Schema_RejectsReversalLinkedToDifferentOccurrence()
     {
         await using var temporary = new TemporaryLedgerDatabase();

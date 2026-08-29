@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 10, including the accepted Gate A baseline; and
+1. the implementation through Week 11, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 10
+## Implemented architecture through Week 11
 
 ```mermaid
 flowchart LR
@@ -35,6 +35,10 @@ flowchart LR
     Indexer -. read-only transition log .-> Ledger[PaymentSandbox.Ledger]
     Ledger --> LedgerDb[(SQLite provisional effects,<br/>reversals, and source checkpoint)]
     Ledger --> LedgerTests[State-machine + cross-database<br/>reorg tests]
+    Indexer -. atomic canonical snapshot .-> Finality[PaymentSandbox.Finality]
+    Ledger -. read-only entry log .-> Finality
+    Finality --> FinalityDb[(SQLite source copies,<br/>qualification/revocation history,<br/>and checkpoint)]
+    Finality --> FinalityTests[Policy + retry + three-database<br/>deep-reorg tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
     Router --> ContractChecks[Example, permit, fuzz,<br/>and invariant tests]
@@ -67,6 +71,11 @@ Week 10 adds another class library rather than a hosted worker. Ledger consumes
 the Indexer's read-only transition log through an explicit high-watermark and
 writes an independent SQLite database. Canonical payment occurrences append
 provisional effects; later detach transitions append linked reversals.
+
+Week 11 adds a third projection database. Finality requires an atomically read
+Indexer head/transition snapshot, a Ledger checkpoint caught up to that exact
+transition watermark, and the exact Ledger entry high-watermark. It appends
+reversible confirmation-policy decisions without changing Ledger history.
 
 ### Build and dependency boundary
 
@@ -202,6 +211,38 @@ accounting, reconciliation, payout authorization, or settlement. The local file
 also has no backup, encryption, tamper evidence, retention, or cross-host
 coordination.
 
+### Confirmation qualification boundary
+
+`PaymentSandbox.Finality` consumes `IChainObservationReader` and
+`ILedgerEntryReader`; both are read-only. The Indexer adapter obtains one stream
+head and the global canonicality high-watermark in one SQLite statement. Finality
+then requires the Ledger's consumed transition cursor to equal that watermark
+and the caller's selected Ledger entry target to equal the current committed
+entry high-watermark. This prevents qualifying a payment while an already-known
+reorg reversal waits in an unconsumed source suffix.
+
+`ConfirmationFinalityPolicy` gives the decision a readable ID, immutable
+confirmation threshold, and independent source/effect limits. For effect block
+`B` and selected head `H`, confirmation count is zero when `H < B`; otherwise it
+is `H - B + 1`, so the inclusion block counts as one.
+
+The Finality database copies consumed Ledger facts, appends
+`confirmation_qualified` and `confirmation_revoked` transitions, and checkpoints
+both upstream snapshots plus the policy. A Ledger reversal revokes an existing
+qualification with reason `ledger_effect_reversed`; a head below the threshold
+uses `confirmation_threshold_lost`. Later eligibility creates a new qualification
+generation. No row is updated to an irreversible final state.
+
+One transaction copies source entries, evaluates every known effect under a hard
+limit, appends decisions, and advances the checkpoint. Versioned fingerprints
+and exact source/decision verification handle unknown outcomes and concurrent
+same-batch writers. Schema triggers independently constrain source reversal,
+active-effect qualification, threshold consistency, and revocation linkage.
+
+Confirmation qualification remains a local, reversible policy result. It is not
+protocol-native finalized/safe evidence, provider honesty, log completeness,
+token delivery, a balance, payout authorization, reconciliation, or settlement.
+
 ### Contract boundary
 
 The Foundry workspace is a separate build system pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
@@ -214,9 +255,10 @@ The Router is token-agnostic and has no production token policy. An emitted amou
 
 ## Planned payment architecture
 
-The Router, API, SQLite intent store, bounded Indexer observation/reorg, and
-provisional ledger portions of the following diagram exist. Wallet integration,
-finality, reconciliation, and signer paths are targets, not current implementations:
+The Router, API, SQLite intent store, bounded Indexer observation/reorg,
+provisional Ledger, and confirmation qualification portions of the following
+diagram exist. Wallet integration, reconciliation, protocol-native finality,
+and signer paths are targets, not current implementations:
 
 ```mermaid
 flowchart LR
@@ -228,7 +270,9 @@ flowchart LR
     Router -. emits PaymentRecorded .-> Chain[EVM chain]
     Chain -. logs and blocks .-> Indexer[Observation indexer<br/>bounded reorg recovery]
     Indexer -. canonicality transitions .-> Ledger[Append-only provisional ledger]
-    Ledger -. compares evidence .-> Reconcile[Reconciliation]
+    Indexer -. exact head snapshot .-> Finality[Confirmation qualification]
+    Ledger -. caught-up entry log .-> Finality
+    Finality -. policy evidence .-> Reconcile[Reconciliation]
 
     Orchestrator[Test-only transaction orchestrator] -. policy-approved requests .-> Signer[Signer abstraction]
     Signer -. signed raw transaction .-> Chain
@@ -247,6 +291,7 @@ The later transaction orchestrator is a separate, test-only capability. It must 
 | `PaymentSandbox.Api`          | Payment intent use cases, validation, idempotent HTTP boundary                    | Chain history truth, direct key material                                     |
 | `PaymentSandbox.Indexer`      | Bounded exact-range block/log observations and atomic restart checkpoints          | Settlement, finality claims, mutating chain state, overwriting fork history  |
 | `PaymentSandbox.Ledger`       | Provisional occurrence effects, linked reversals, and a durable source cursor       | Finality, balances, payouts, Intent mutation, or source-history mutation     |
+| `PaymentSandbox.Finality`     | Reversible confirmation qualification over exact caught-up source snapshots         | Protocol irreversibility, settlement, balances, payouts, or source mutation |
 | `PaymentSandbox.Orchestrator` | Test-only transaction requests, attempts, nonce coordination, replacement history | Custody claims, arbitrary signing                                            |
 | Reconciliation                | Explainable comparisons among intents, chain evidence, ledger, and token evidence | Treating a wallet balance as an accounting ledger                            |
 | Solidity contracts            | Direct payer-to-merchant transfer, exact permit path, and payment event semantics | Accepted-token policy, off-chain invoices, finality, reconciliation, custody |
@@ -268,9 +313,10 @@ The architecture must preserve these rules as implementation grows:
 Most of these remain roadmap invariants. The current code establishes exact
 value types, a narrow non-custodial contract boundary, executable contract
 failure cases, a bounded .NET identity gate, durable local business idempotency,
-append-only chain observations, bounded fork recovery, and provisional linked
-effect/reversal history. It does not implement confirmation/finality,
-reconciliation, balances, or off-chain settlement.
+append-only chain observations, bounded fork recovery, provisional linked
+effect/reversal history, and reversible confirmation-depth qualification. It
+does not implement protocol-native finality, reconciliation, balances, payout
+authorization, or off-chain settlement.
 
 ## Trust boundaries
 
@@ -285,11 +331,12 @@ Current and future code must treat the following as untrusted input:
 
 CI intentionally needs no external RPC endpoint or signing secret. Week 5
 identity tests use an in-memory fake, Week 7 API tests use real Kestrel listeners
-and isolated temporary SQLite files, and Weeks 8-10 combine fake-RPC/fork tests
+and isolated temporary SQLite files, and Weeks 8-11 combine fake-RPC/fork tests
 with a loopback raw JSON-RPC/ABI fixture and real temporary SQLite files. These
 exercise protocol mapping, migration, restart, constraints, exact retry,
 concurrent scanners/ledger writers, range/reorg/ledger limits, fork retention,
-atomic branch switching, and cross-database effect/reversal projection; see [Threat
+atomic branch switching, cross-database effect/reversal projection, and a
+three-database deep-reorg qualification revocation; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary

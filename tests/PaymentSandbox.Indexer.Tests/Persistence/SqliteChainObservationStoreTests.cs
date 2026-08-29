@@ -338,12 +338,19 @@ public sealed class SqliteChainObservationStoreTests
             IndexerTestData.Hash('e'),
             maxCount: 10,
             TestContext.Current.CancellationToken);
+        ChainObservationSnapshot snapshot = await store.GetCanonicalSnapshotAsync(
+            IndexerTestData.ChainId,
+            IndexerTestData.Router,
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, highWatermark);
         Assert.Equal([1L, 2L], transitions.Select(item => item.TransitionId));
         Assert.All(transitions, item => Assert.Equal(BlockCanonicality.Canonical, item.Canonicality));
         Assert.Equal(IndexerTestData.Batch().Payments, payments);
         Assert.Empty(wrongFork);
+        Assert.Equal(highWatermark, snapshot.CanonicalityHighWatermark);
+        Assert.Equal(101, snapshot.Checkpoint!.LastBlockNumber);
+        Assert.Equal(IndexerTestData.Hash('2'), snapshot.Checkpoint.LastBlockHash);
     }
 
     [Fact]

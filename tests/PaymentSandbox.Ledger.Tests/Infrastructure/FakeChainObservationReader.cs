@@ -31,6 +31,15 @@ internal sealed class FakeChainObservationReader : IChainObservationReader
 
     internal int PaymentReads { get; private set; }
 
+    public ValueTask<ChainObservationSnapshot> GetCanonicalSnapshotAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(new ChainObservationSnapshot(null, HighWatermark));
+    }
+
     public ValueTask<long> GetCanonicalityHighWatermarkAsync(
         CancellationToken cancellationToken = default)
     {

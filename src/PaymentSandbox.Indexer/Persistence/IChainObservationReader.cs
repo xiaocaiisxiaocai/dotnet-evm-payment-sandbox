@@ -6,6 +6,12 @@ namespace PaymentSandbox.Indexer.Persistence;
 /// <summary>Read-only append-log boundary consumed by downstream evidence processors.</summary>
 public interface IChainObservationReader
 {
+    /// <summary>Reads one stream head and the global transition cursor atomically.</summary>
+    ValueTask<ChainObservationSnapshot> GetCanonicalSnapshotAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Returns the largest transition ID currently committed by any stream.</summary>
     ValueTask<long> GetCanonicalityHighWatermarkAsync(
         CancellationToken cancellationToken = default);

@@ -93,6 +93,64 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
         return new LedgerCommitResult(LedgerCommitDisposition.Applied, next);
     }
 
+    public async ValueTask<long> GetEntryHighWatermarkAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COALESCE(MAX(entry_id), 0) FROM canonical_payment_ledger_entries;";
+        return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    public async ValueTask<IReadOnlyList<LedgerEntry>> GetEntriesAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        long afterEntryId,
+        long throughEntryId,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateStream(chainId, router);
+        ArgumentOutOfRangeException.ThrowIfNegative(afterEntryId);
+        if (throughEntryId < afterEntryId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(throughEntryId),
+                "The ledger entry target cannot precede the exclusive cursor.");
+        }
+
+        ValidateReadLimit(maxCount);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT entry_id, kind, source_transition_id, source_checkpoint_revision,
+                   block_number, block_hash, transaction_hash, log_index,
+                   payment_id, payer_address, token_address, merchant_address,
+                   amount_raw, reverses_entry_id, source_changed_at_utc, recorded_at_utc
+            FROM canonical_payment_ledger_entries
+            WHERE chain_id = $chainId AND router_address = $routerAddress
+              AND entry_id > $afterEntryId AND entry_id <= $throughEntryId
+            ORDER BY entry_id
+            LIMIT $maxCount;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$afterEntryId", afterEntryId);
+        command.Parameters.AddWithValue("$throughEntryId", throughEntryId);
+        command.Parameters.AddWithValue("$maxCount", maxCount);
+        var entries = new List<LedgerEntry>();
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(ReadEntry(reader, chainId, router));
+        }
+
+        return entries;
+    }
+
     public async ValueTask<IReadOnlyList<LedgerEntry>> GetEntriesAsync(
         EvmChainId chainId,
         EvmAddress router,
@@ -111,9 +169,9 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
         command.CommandText =
             """
             SELECT entry_id, kind, source_transition_id, source_checkpoint_revision,
-                   block_number, payment_id, payer_address, token_address,
-                   merchant_address, amount_raw, reverses_entry_id,
-                   source_changed_at_utc, recorded_at_utc
+                   block_number, block_hash, transaction_hash, log_index,
+                   payment_id, payer_address, token_address, merchant_address,
+                   amount_raw, reverses_entry_id, source_changed_at_utc, recorded_at_utc
             FROM canonical_payment_ledger_entries
             WHERE chain_id = $chainId AND router_address = $routerAddress
               AND block_hash = $blockHash AND transaction_hash = $transactionHash
@@ -128,7 +186,7 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            entries.Add(ReadEntry(reader, chainId, router, blockHash, transactionHash, logIndex));
+            entries.Add(ReadEntry(reader, chainId, router));
         }
 
         return entries;
@@ -504,10 +562,7 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
     private static LedgerEntry ReadEntry(
         SqliteDataReader reader,
         EvmChainId chainId,
-        EvmAddress router,
-        EvmHash blockHash,
-        EvmHash transactionHash,
-        long logIndex) =>
+        EvmAddress router) =>
         new(
             reader.GetInt64(0),
             ParseKind(reader.GetString(1)),
@@ -516,20 +571,20 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
             chainId,
             router,
             reader.GetInt64(4),
-            blockHash,
-            transactionHash,
-            logIndex,
-            PaymentId.Parse(reader.GetString(5)),
-            EvmAddress.Parse(reader.GetString(6)),
-            EvmAddress.Parse(reader.GetString(7)),
-            EvmAddress.Parse(reader.GetString(8)),
+            EvmHash.Parse(reader.GetString(5)),
+            EvmHash.Parse(reader.GetString(6)),
+            reader.GetInt64(7),
+            PaymentId.Parse(reader.GetString(8)),
+            EvmAddress.Parse(reader.GetString(9)),
+            EvmAddress.Parse(reader.GetString(10)),
+            EvmAddress.Parse(reader.GetString(11)),
             new RawTokenAmount(BigInteger.Parse(
-                reader.GetString(9),
+                reader.GetString(12),
                 NumberStyles.None,
                 CultureInfo.InvariantCulture)),
-            ReadNullableInt64(reader, 10),
-            ParseTimestamp(reader.GetString(11)),
-            ParseTimestamp(reader.GetString(12)));
+            ReadNullableInt64(reader, 13),
+            ParseTimestamp(reader.GetString(14)),
+            ParseTimestamp(reader.GetString(15)));
 
     private static void AddEntryParameters(
         SqliteCommand command,
@@ -586,6 +641,16 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
         if (router.IsZero)
         {
             throw new ArgumentException("The Router address cannot be zero.", nameof(router));
+        }
+    }
+
+    private static void ValidateReadLimit(int maxCount)
+    {
+        if (maxCount is < 1 or > 100_001)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxCount),
+                "A ledger source read must request between 1 and 100,001 rows.");
         }
     }
 

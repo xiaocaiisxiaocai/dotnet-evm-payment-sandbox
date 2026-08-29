@@ -38,6 +38,53 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
         return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
+    public async ValueTask<ChainObservationSnapshot> GetCanonicalSnapshotAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReadStream(chainId, router);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        // One SELECT gives SQLite one read snapshot for both values. Two
+        // independent queries could straddle an Indexer commit and pair an old
+        // block head with a new transition high-watermark.
+        command.CommandText =
+            """
+            SELECT checkpoint.start_block_number, checkpoint.last_block_number,
+                   checkpoint.last_block_hash, checkpoint.revision,
+                   checkpoint.updated_at_utc,
+                   (
+                       SELECT COALESCE(MAX(transition_id), 0)
+                       FROM block_canonicality_transitions
+                   )
+            FROM (SELECT 1) AS singleton
+            LEFT JOIN indexer_checkpoints AS checkpoint
+              ON checkpoint.chain_id = $chainId
+             AND checkpoint.router_address = $routerAddress;
+            """;
+        AddStreamParameters(command, chainId, router);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The canonical snapshot query returned no row.");
+        }
+
+        long highWatermark = reader.GetInt64(5);
+        ChainObservationCheckpoint? checkpoint = reader.IsDBNull(0)
+            ? null
+            : new ChainObservationCheckpoint(
+                chainId,
+                router,
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                EvmHash.Parse(reader.GetString(2)),
+                reader.GetInt64(3),
+                ParseTimestamp(reader.GetString(4)));
+        return new ChainObservationSnapshot(checkpoint, highWatermark);
+    }
+
     public async ValueTask<IReadOnlyList<BlockCanonicalityTransition>>
         GetCanonicalityTransitionsAsync(
             EvmChainId chainId,

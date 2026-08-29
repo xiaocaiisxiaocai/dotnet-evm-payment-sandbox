@@ -15,13 +15,8 @@ public sealed record LedgerCommitResult(
     LedgerCheckpoint Checkpoint);
 
 /// <summary>Atomic append boundary for provisional effects and their source cursor.</summary>
-public interface ILedgerStore
+public interface ILedgerStore : ILedgerEntryReader
 {
-    ValueTask<LedgerCheckpoint?> GetCheckpointAsync(
-        EvmChainId chainId,
-        EvmAddress router,
-        CancellationToken cancellationToken = default);
-
     ValueTask<LedgerCommitResult> CommitAsync(
         LedgerCheckpoint? expectedPrevious,
         CanonicalPaymentBatch batch,

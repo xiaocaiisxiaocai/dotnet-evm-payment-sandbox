@@ -3,6 +3,7 @@
     <Project Path="src/PaymentSandbox.Api/PaymentSandbox.Api.csproj" />
     <Project Path="src/PaymentSandbox.Contracts/PaymentSandbox.Contracts.csproj" />
     <Project Path="src/PaymentSandbox.Domain/PaymentSandbox.Domain.csproj" />
+    <Project Path="src/PaymentSandbox.Finality/PaymentSandbox.Finality.csproj" />
     <Project Path="src/PaymentSandbox.Indexer/PaymentSandbox.Indexer.csproj" />
     <Project Path="src/PaymentSandbox.Ledger/PaymentSandbox.Ledger.csproj" />
   </Folder>
@@ -10,6 +11,7 @@
     <Project Path="tests/PaymentSandbox.Api.Tests/PaymentSandbox.Api.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Contracts.Tests/PaymentSandbox.Contracts.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Domain.Tests/PaymentSandbox.Domain.Tests.csproj" />
+    <Project Path="tests/PaymentSandbox.Finality.Tests/PaymentSandbox.Finality.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Indexer.Tests/PaymentSandbox.Indexer.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Ledger.Tests/PaymentSandbox.Ledger.Tests.csproj" />
   </Folder>
