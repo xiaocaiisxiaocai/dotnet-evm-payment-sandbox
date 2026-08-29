@@ -1,7 +1,7 @@
 # Threat Model v1
 
-- Status: Week 6 bounded update to the Week 1 security baseline
-- Last updated: 2026-08-29
+- Status: Week 7 bounded update to the Week 1 security baseline
+- Last updated: 2026-08-30
 - Owner: repository maintainer
 
 ## 1. Purpose
@@ -14,9 +14,9 @@ The current model covers:
 
 - The developer workstation, Git working tree, and repository-local `.tools` directory.
 - The GitHub repository and read-only GitHub Actions workflows.
-- The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including the typed contract adapter, runnable process-local Payment Intent API, identity checks, permit, fuzz, invariant, and local deployment tests.
+- The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including the typed contract adapter, runnable SQLite-backed Payment Intent API, identity checks, permit, fuzz, invariant, and local deployment tests.
 - Local Anvil, plus one later smoke test on Ethereum Sepolia.
-- The Indexer, SQLite database, Ledger, Orchestrator, and SIWE components planned for later gates.
+- The Indexer, Ledger, Orchestrator, and SIWE components planned for later gates.
 
 The following are explicitly out of scope:
 
@@ -40,7 +40,7 @@ Workstation -------- downloads --------> GitHub/.NET/Foundry/Gitleaks releases
 GitHub Actions (read-only, no signing secret)
 
 Later data flow:
-HTTP client -> local API -> volatile intent store
+HTTP client -> local API -> local SQLite intent store
 Payer -> Anvil/Sepolia -> untrusted RPC -> future Indexer -> SQLite/Ledger
 Test signing request -> Orchestrator -> isolated test wallet -> Anvil/Sepolia
 ```
@@ -50,6 +50,7 @@ Boundary assumptions:
 - Download sites and third-party Actions are supply-chain boundaries. A version label alone is insufficient; Actions use commit SHAs and downloaded archives use fixed SHA-256 values.
 - RPC output is untrusted. Week 5 checks self-reported chain ID and latest code at an operator-configured address against a reviewed runtime hash. Trusted blocks, independent cross-checks, reorg handling, and finality remain later controls.
 - HTTP bodies and headers are untrusted. Week 6 validates exact integer/address shapes, requires a bounded idempotency key, caps request bodies at 16 KiB, and returns non-leaking conflicts. The API has no identity or tenant boundary and must remain loopback/test-only.
+- Database paths are operator-controlled configuration. Week 7 resolves one absolute path, runs known migrations before listening, rejects future schema versions, and uses parameterized SQL. A local database file remains mutable, unencrypted application data rather than a trust anchor.
 - Pull-request code is untrusted input. CI has no deployment key, does not use `pull_request_target`, retains no checkout credentials, and receives only `contents: read` permission.
 - Local SQLite files and logs do not provide production-grade confidentiality or tamper resistance.
 
@@ -61,7 +62,7 @@ Boundary assumptions:
 | Credential-bearing RPC URL | Quota theft and activity disclosure | Stored only in ignored local configuration; examples contain no credential |
 | Signed raw transaction | Can be replayed while valid | Not implemented before Gate D; later treated as sensitive and never logged |
 | Chain, contract, and code-hash configuration | Wrong-chain execution or incorrect credit | Local syntax checks and chain/address/runtime matching implemented; application startup, trusted-block, and RPC-switch controls remain Gate B work |
-| Payment intents, events, and ledger | Duplicate credit, lost entries, or unexplained differences | Process-local create idempotency exists; durability, reorg handling, append-only entries, and reconciliation remain Gates B/C |
+| Payment intents, events, and ledger | Duplicate credit, lost entries, or unexplained differences | SQLite-backed intent creation survives restart and shares a unique key across processes using one file; reorg handling, append-only entries, and reconciliation remain Gates B/C |
 | CI token and workflow | Repository or release-chain modification | Read-only permission, pinned Actions, and no persisted checkout credential |
 | Dependency graph and build tools | Replaced or non-reproducible builds | Exact SDK/tool versions, NuGet locks, gitlinks, and verified archive hashes |
 
@@ -78,6 +79,7 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 7. An unknown broadcast result must not create a new payment.
 8. Logs must not contain a private key, mnemonic, credential-bearing RPC URL, or signed raw transaction.
 9. An intent in `created` state must never be presented as wallet authorization, a transaction, chain observation, or settled funds.
+10. An API process must not accept requests until every known database migration is applied; a newer unknown schema must fail closed.
 
 ## 6. Risk Register
 
@@ -92,12 +94,12 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 | S05 | A malicious or incorrect RPC reports the wrong chain or contract state | Medium | High | Week 5 fails closed on chain ID, configured address, missing/malformed code, and runtime Keccak; trusted-block and independent-provider checks remain | Partly controlled | Gate B |
 | S06 | Configuration error deploys or signs on mainnet | Low | High | `DeployLocal` already fails closed outside chain ID `31337`; future signing and Sepolia entry points must use an explicit allowlist and reject chain ID `1` | Partly controlled | Gates A/B |
 | S07 | Reorg, truncated logs, or incorrect finality causes false credit | Medium | High | Canonical blocks, common-ancestor rollback, finality anchors, and fault tests | Planned | Gates B/C |
-| S08 | Retry, concurrent nonce use, or unknown broadcast causes double payment | Medium | High | Week 6 atomically deduplicates process-local intent creation; durable idempotency, nonce coordination, persisted raw transaction/hash, and same-payload rebroadcast remain | Partly controlled | Gates B/D |
-| S09 | SQLite or ledger data is modified and balances become unexplainable | Medium | Medium | Append-only entries, unique sources, reversals, and block-bounded reconciliation | Planned | Gate C |
+| S08 | Retry, concurrent nonce use, or unknown broadcast causes double payment | Medium | High | Week 7 atomically deduplicates durable intent creation through a SQLite unique key and transaction; nonce coordination, persisted raw transaction/hash, and same-payload rebroadcast remain | Partly controlled | Gates B/D |
+| S09 | SQLite or ledger data is modified and balances become unexplainable | Medium | Medium | Versioned startup migration, `STRICT`/`CHECK` constraints, parameterized SQL, and ignored local files exist; backup, tamper evidence, append-only entries, reversals, and reconciliation remain | Partly controlled | Gate C |
 | S10 | Secret scanning exits successfully while its rules are ineffective | Low | High | Fixed scanner version plus a dynamic canary with a dedicated expected exit code | Controlled | Gate A |
 | S11 | Typed-data authorization is replayed across users, chains, or contracts | Medium | High | Domain, chain ID, verifying contract, nonce, deadline, and concurrent-consumption tests | Planned | Gate E |
 | S12 | A testnet RPC fails, test funds disappear, or test data is public | High | Low | Assign no value to test funds, store no customer data, and use Anvil for daily work | Accepted | Ongoing |
-| S13 | Unauthenticated or oversized API traffic exhausts memory, crosses tenants, or loses idempotency on restart/multiple instances | High | High | 16 KiB body limit, bounded visible-ASCII keys, loopback-only documentation, and non-leaking conflicts; auth, tenant scoping, rate limits, capacity/expiry, and durable unique constraints remain | Partly controlled | Gate B |
+| S13 | Unauthenticated API traffic grows the database, creates lock pressure, crosses tenants, or bypasses idempotency through separate files | High | High | 16 KiB body limit, bounded keys, shared-file unique constraint, restart tests, loopback-only documentation, and non-leaking conflicts; auth, tenant scoping, quotas, rate limits, expiry, and cross-host storage remain | Partly controlled | Gate B |
 
 ## 7. Secret-Scanning Boundary
 

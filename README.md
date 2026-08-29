@@ -7,9 +7,9 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-6 complete; Week 7 is next.
+**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-7 complete; Week 8 is next.
 
-Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, and Week 6 adds the first runnable off-chain API boundary.
+Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, and Week 7 made its intent state durable.
 
 Implemented in the current repository:
 
@@ -26,9 +26,10 @@ Implemented in the current repository:
 - `PaymentSandbox.Contracts` maps the reviewed ABI to typed Nethereum functions, event, and errors while keeping Nethereum out of Domain.
 - A fail-closed connector validates operator configuration, `eth_chainId`, the configured Router address, and `eth_getCode` runtime Keccak before exposing a local calldata encoder.
 - The public Contracts API has no account, signer, broadcast, receipt-polling, or settlement method; its RPC surface is limited to two identity observations.
-- `PaymentSandbox.Api` creates and queries process-local Payment Intents through real HTTP endpoints without contacting RPC or generating a transaction.
+- `PaymentSandbox.Api` creates and queries durable local Payment Intents through real HTTP endpoints without contacting RPC or generating a transaction.
 - Create requests use exact string-encoded chain IDs and raw amounts, canonical addresses, and atomic business idempotency under concurrent retries.
 - First creation returns `201`; a semantically identical replay returns the original resource with `200`; conflicting key reuse returns a non-leaking `409`.
+- A versioned SQLite `STRICT` schema, unique binary idempotency key, and insert-first transaction preserve intents across restarts and coordinate processes sharing one database file.
 - Verification replays compilation, local deployment, successful payment, and revert from a disposable directory containing only Git-known source and the two direct contract dependencies.
 - The Foundry toolchain is pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
 - Local verification and remote CI check the locked .NET build/tests, Foundry formatting/build/tests, local RPC observation, and committed secrets. Gate A run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588), Week 2 run [`33102551138`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33102551138), Week 3 run [`33127124223`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33127124223), Week 4 run [`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343), Week 5 run [`33257669877`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33257669877), and Week 6 run [`33259846122`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33259846122) each passed all three jobs at their respective milestones.
@@ -36,7 +37,7 @@ Implemented in the current repository:
 
 Deliberately not implemented yet:
 
-- Durable/multi-instance Payment Intent storage, database schema, indexer, ledger, or reconciliation.
+- Cross-host Payment Intent coordination, database backup/encryption/tamper evidence, indexer, ledger, or reconciliation.
 - API authentication, authorization, tenant isolation, rate limiting, public hosting, or production data handling.
 - Application startup wiring, a deployment registry, trusted-block/cross-provider checks, or a public-network Router address.
 - .NET transaction signing, broadcasting, nonce management, SIWE, or off-chain EIP-712/permit construction and validation.
@@ -78,15 +79,16 @@ dotnet build .\PaymentSandbox.slnx --configuration Release --no-restore
 dotnet test .\PaymentSandbox.slnx --configuration Release --no-build --no-restore
 ```
 
-To run the local-only Week 6 API:
+To run the local-only API:
 
 ```powershell
 dotnet run --project .\src\PaymentSandbox.Api --urls http://127.0.0.1:5086
 ```
 
-The in-memory Payment Intent store is erased on restart and does not coordinate
-multiple API processes. Keep this endpoint on loopback; it has no authentication
-or production abuse controls.
+The default SQLite database is created under
+`src/PaymentSandbox.Api/data/payment-intents.db` and survives restart. Processes
+coordinate only when configured to use the same local file. Keep this endpoint
+on loopback; it has no authentication or production abuse controls.
 
 To run the Foundry checks directly after installation:
 
@@ -115,8 +117,8 @@ Do not add a private key to `.env.example`, source files, command history, test 
 | `tests/PaymentSandbox.Domain.Tests/`       | Executable specifications for the Domain project.                                                                        |
 | `src/PaymentSandbox.Contracts/`            | Typed Router ABI projection, read-only identity RPC adapter, trust policy, and verified local calldata encoder.          |
 | `tests/PaymentSandbox.Contracts.Tests/`    | Network-free identity, failure-boundary, ABI selector, event-indexing, and calldata tests.                               |
-| `src/PaymentSandbox.Api/`                  | Runnable local Payment Intent HTTP boundary and concurrency-safe in-memory store.                                        |
-| `tests/PaymentSandbox.Api.Tests/`          | Service tests and real loopback-Kestrel HTTP/idempotency/concurrency tests.                                               |
+| `src/PaymentSandbox.Api/`                  | Runnable local Payment Intent HTTP boundary, versioned SQLite migration, and durable idempotent store.                   |
+| `tests/PaymentSandbox.Api.Tests/`          | Service, migration, constraint, restart, and real loopback-Kestrel concurrency tests.                                    |
 | `contracts/`                               | Independent Foundry workspace containing the test-only Router, test tokens, local deployment script, and contract tests. |
 | `contracts/abi/PaymentRouter.json`         | Reviewed standard ABI array for later typed client generation.                                                          |
 | `contracts/baselines/PaymentRouter.v1.json` | Reviewed toolchain, selector, storage-layout, size, and runtime-code identity.                                         |
@@ -131,6 +133,7 @@ Do not add a private key to `.env.example`, source files, command history, test 
 | `docs/learning/week-04-contract-hardening.md` | Explains the reviewed ABI/runtime baseline, stronger properties, clean replay, and update procedure.                  |
 | `docs/learning/week-05-contract-adapter.md` | Explains typed binding, fail-closed RPC identity checks, calldata encoding, and remaining trust limits.                |
 | `docs/learning/week-06-payment-intent-api.md` | Explains HTTP contracts, normalized idempotency, concurrency, and volatile-store limits.                             |
+| `docs/learning/week-07-sqlite-persistence.md` | Explains schema ownership, insert-first transactions, restart evidence, and SQLite limits.                           |
 | `docs/threat-model.md`                     | Records protected assets, trust boundaries, threats, and current controls.                                               |
 | `docs/decisions/`                          | Records architectural decisions and their trade-offs.                                                                    |
 
@@ -162,9 +165,9 @@ Week 5 adds the first Nethereum boundary without adding a runtime payment servic
 
 Week 6 adds a runnable ASP.NET Core boundary for creating and querying Payment
 Intents. The API normalizes exact business terms before comparing idempotent
-retries and atomically publishes its key and payment-ID indexes. Its in-memory
-store is intentionally volatile and single-process; the API has no RPC,
-signing, broadcasting, indexing, or settlement capability. See the [Week 6
+retries and atomically publishes its key and payment-ID indexes. At the Week 6
+milestone the store was intentionally volatile and single-process; the API has
+no RPC, signing, broadcasting, indexing, or settlement capability. See the [Week 6
 Payment Intent guide](docs/learning/week-06-payment-intent-api.md).
 
 The 2026-08-29 Week 6 local verification passed 85 .NET tests, all 36 unchanged
@@ -176,6 +179,19 @@ safe replay, and `200` query responses. Implementation commit
 and CI run [`33259846122`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33259846122)
 record the cross-platform evidence; all three jobs passed in 32 seconds.
 
+Week 7 replaces the dictionary with `Microsoft.Data.Sqlite`. An application-owned
+migration creates `STRICT` tables, while a binary unique key and insert-first
+transaction preserve the existing create/replay/conflict contract across
+restart and processes sharing one local file. Startup fails closed on an
+unsupported schema version. This adds durability, not payment settlement or a
+production database security posture. See the [Week 7 SQLite guide](docs/learning/week-07-sqlite-persistence.md).
+
+The 2026-08-30 Week 7 local verification passed 93 .NET tests, all 36 unchanged
+Foundry tests, the reviewed contract baseline, isolated successful/reverted
+Anvil observation, the dynamic secret canary, and working-tree/full-history
+secret scans. A real stop/start smoke test then queried and safely replayed the
+same durable Payment Intent and PaymentId from the default SQLite file.
+
 ## Architecture rules
 
 - Domain code owns business meaning and invariants, not infrastructure concerns.
@@ -186,7 +202,7 @@ record the cross-platform evidence; all three jobs passed in 32 seconds.
 - Raw on-chain values remain exact integers. Formatting is an edge concern.
 - Contract-baseline drift requires explicit interface, bytecode, dependency, and downstream-consumer review.
 
-See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), and [Week 6](docs/learning/week-06-payment-intent-api.md) learning guides for the rationale and evidence.
+See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), [Week 6](docs/learning/week-06-payment-intent-api.md), and [Week 7](docs/learning/week-07-sqlite-persistence.md) learning guides for the rationale and evidence.
 
 ## Roadmap
 
@@ -198,8 +214,9 @@ See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/de
 | Week 4             | **Complete:** reviewed ABI/runtime/version/storage baseline, stronger fuzz/invariants, and clean tracked-source deployment replay.                                                    |
 | Week 5             | **Complete:** typed Nethereum ABI access, fail-closed chain/address/runtime-code identity checks, and unsigned local calldata encoding.                                               |
 | Week 6             | **Complete:** runnable create/query Payment Intent API with normalized, concurrent-safe process-local idempotency.                                                                    |
-| Week 7 next        | Replace volatile intent storage with migration-owned SQLite persistence while preserving atomic idempotency.                                                                         |
-| Weeks 8-12         | Add reorg-safe indexing, append-only ledger, finality, and reconciliation.                                                                                                            |
+| Week 7             | **Complete:** migration-owned SQLite persistence, restart-safe intents, schema constraints, and durable atomic idempotency.                                                           |
+| Week 8 next        | Establish the first chain-observation and checkpoint persistence boundary without claiming finality.                                                                                  |
+| Weeks 9-12         | Add reorg-safe indexing, append-only ledger, finality, and reconciliation.                                                                                                            |
 | Weeks 13-19        | Add a test-only transaction lifecycle orchestrator, SIWE, and separate EIP-712/permit replay controls.                                                                              |
 | Weeks 20-24        | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                          |
 

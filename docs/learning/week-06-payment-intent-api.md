@@ -1,5 +1,10 @@
 # Week 6: Payment Intent API
 
+> Historical milestone note: this document describes the Week 6 in-memory
+> implementation. Week 7 replaces that store with migration-owned SQLite while
+> preserving the HTTP and idempotency contract. See
+> [Week 7 persistence](week-07-sqlite-persistence.md) for the current store.
+
 Week 6 adds the first runnable .NET application. Its purpose is deliberately
 narrow: accept an off-chain request to receive a token payment, assign a public
 correlation ID, and make retries safe within one process. It does not contact an
@@ -86,7 +91,7 @@ by an insert is not equivalent.
 3. `Domain/PaymentIntents/PaymentIntent.cs` defines the intentionally small state model.
 4. `Api/PaymentIntents/CreatePaymentIntentRequest.cs` translates untrusted JSON into Domain values.
 5. `Api/PaymentIntents/PaymentIntentService.cs` creates a candidate without owning persistence details.
-6. `Api/PaymentIntents/InMemoryPaymentIntentStore.cs` owns the atomic idempotency decision.
+6. The Week 6 `InMemoryPaymentIntentStore` owned the atomic decision; the current equivalent is `SqlitePaymentIntentStore.cs`.
 7. `Api/PaymentIntents/PaymentIntentEndpoints.cs` maps outcomes to HTTP semantics.
 8. `PaymentIntentHttpTests.cs` verifies the boundary through an actual loopback Kestrel server.
 
@@ -135,6 +140,6 @@ authentication, authorization, tenant isolation, rate limiting, durable audit
 trail, token allowlist, database, or privacy classification. The API must stay
 loopback/test-only until later work explicitly closes those gaps.
 
-Week 7 should replace the volatile store with a migration-owned SQLite model and
-preserve the same idempotency transaction semantics. It should not add chain
-settlement states before the indexer can support them with canonical evidence.
+Week 7 now replaces the volatile store with a migration-owned SQLite model while
+preserving the same idempotency semantics. It still does not add chain settlement
+states before the indexer can support them with canonical evidence.

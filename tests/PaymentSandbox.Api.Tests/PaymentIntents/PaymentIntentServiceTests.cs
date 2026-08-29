@@ -11,89 +11,44 @@ public sealed class PaymentIntentServiceTests
         new(2026, 8, 29, 12, 34, 56, TimeSpan.Zero);
 
     [Fact]
-    public async Task CreateAsync_SafelyReplaysSameNormalizedTerms()
+    public async Task CreateAsync_GeneratesCandidateAndDelegatesStoreDecision()
     {
-        var service = CreateService();
-        var key = ParseKey("checkout-123");
-        PaymentIntentTerms firstTerms = CreateTerms();
-        PaymentIntentTerms equivalentTerms = CreateTerms(
-            token: EvmAddress.Parse(firstTerms.Token.Value.ToUpperInvariant()));
+        var store = new CapturingStore();
+        var service = new PaymentIntentService(store, new FixedTimeProvider(Now));
+        IdempotencyKey key = ParseKey("checkout-123");
+        PaymentIntentTerms terms = CreateTerms();
 
-        PaymentIntentCreateResult first = await service.CreateAsync(
+        PaymentIntentCreateResult result = await service.CreateAsync(
             key,
-            firstTerms,
-            TestContext.Current.CancellationToken);
-        PaymentIntentCreateResult replay = await service.CreateAsync(
-            key,
-            equivalentTerms,
+            terms,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(PaymentIntentCreateDisposition.Created, first.Disposition);
-        Assert.Equal(PaymentIntentCreateDisposition.Replayed, replay.Disposition);
-        Assert.Same(first.Intent, replay.Intent);
-        Assert.Equal(Now, replay.Intent!.CreatedAtUtc);
+        Assert.Equal(PaymentIntentCreateDisposition.Created, result.Disposition);
+        Assert.Same(key, store.CreatedWithKey);
+        Assert.Same(result.Intent, store.CreatedCandidate);
+        Assert.Equal(terms, result.Intent!.Terms);
+        Assert.Equal(Now, result.Intent.CreatedAtUtc);
     }
 
     [Fact]
-    public async Task CreateAsync_RejectsSameKeyWithDifferentTermsWithoutLeakingIntent()
+    public async Task FindByIdAsync_DelegatesPublicCorrelationId()
     {
-        var service = CreateService();
-        var key = ParseKey("checkout-conflict");
-        await service.CreateAsync(
-            key,
-            CreateTerms(),
+        PaymentIntent expected = PaymentIntent.Create(PaymentId.New(), CreateTerms(), Now);
+        var store = new CapturingStore { FoundIntent = expected };
+        var service = new PaymentIntentService(store, new FixedTimeProvider(Now));
+
+        PaymentIntent? result = await service.FindByIdAsync(
+            expected.Id,
             TestContext.Current.CancellationToken);
 
-        PaymentIntentCreateResult conflict = await service.CreateAsync(
-            key,
-            CreateTerms(amount: new RawTokenAmount(2)),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(PaymentIntentCreateDisposition.Conflict, conflict.Disposition);
-        Assert.Null(conflict.Intent);
+        Assert.Same(expected, result);
+        Assert.Same(expected.Id, store.FoundWithId);
     }
 
     [Fact]
-    public async Task CreateAsync_DifferentCaseSensitiveKeysCreateDifferentResources()
+    public async Task CreateAsync_CancellationStopsBeforeStoreMutation()
     {
-        var service = CreateService();
-
-        PaymentIntentCreateResult lower = await service.CreateAsync(
-            ParseKey("order-a"),
-            CreateTerms(),
-            TestContext.Current.CancellationToken);
-        PaymentIntentCreateResult upper = await service.CreateAsync(
-            ParseKey("ORDER-A"),
-            CreateTerms(),
-            TestContext.Current.CancellationToken);
-
-        Assert.NotEqual(lower.Intent!.Id, upper.Intent!.Id);
-    }
-
-    [Fact]
-    public async Task FindByIdAsync_ReturnsOnlyPublishedIntent()
-    {
-        var service = CreateService();
-        PaymentIntentCreateResult created = await service.CreateAsync(
-            ParseKey("lookup"),
-            CreateTerms(),
-            TestContext.Current.CancellationToken);
-
-        PaymentIntent? found = await service.FindByIdAsync(
-            created.Intent!.Id,
-            TestContext.Current.CancellationToken);
-        PaymentIntent? missing = await service.FindByIdAsync(
-            PaymentId.New(),
-            TestContext.Current.CancellationToken);
-
-        Assert.Same(created.Intent, found);
-        Assert.Null(missing);
-    }
-
-    [Fact]
-    public async Task CreateAsync_CancellationBeforeMutationPublishesNothing()
-    {
-        var store = new InMemoryPaymentIntentStore();
+        var store = new CapturingStore();
         var service = new PaymentIntentService(store, new FixedTimeProvider(Now));
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
@@ -103,15 +58,7 @@ public sealed class PaymentIntentServiceTests
             CreateTerms(),
             cancellation.Token).AsTask());
 
-        // Reusing the same key must still be a first creation. Querying a
-        // random payment ID here would not prove that the key index stayed clean.
-        PaymentIntentCreateResult retry = await service.CreateAsync(
-            ParseKey("cancelled"),
-            CreateTerms(),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(PaymentIntentCreateDisposition.Created, retry.Disposition);
-        Assert.NotNull(retry.Intent);
+        Assert.Null(store.CreatedCandidate);
     }
 
     [Theory]
@@ -138,26 +85,54 @@ public sealed class PaymentIntentServiceTests
             out _));
     }
 
-    private static PaymentIntentService CreateService() =>
-        new(new InMemoryPaymentIntentStore(), new FixedTimeProvider(Now));
-
     private static IdempotencyKey ParseKey(string value)
     {
         Assert.True(IdempotencyKey.TryParse(value, out IdempotencyKey? key));
         return key;
     }
 
-    private static PaymentIntentTerms CreateTerms(
-        EvmAddress? token = null,
-        RawTokenAmount? amount = null) =>
+    private static PaymentIntentTerms CreateTerms() =>
         new(
             new EvmChainId(31_337),
-            token ?? EvmAddress.Parse("0x2222222222222222222222222222222222222222"),
+            EvmAddress.Parse("0x2222222222222222222222222222222222222222"),
             EvmAddress.Parse("0x3333333333333333333333333333333333333333"),
-            amount ?? new RawTokenAmount(1));
+            new RawTokenAmount(1));
 
     private sealed class FixedTimeProvider(DateTimeOffset value) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => value;
+    }
+
+    private sealed class CapturingStore : IPaymentIntentStore
+    {
+        public IdempotencyKey? CreatedWithKey { get; private set; }
+
+        public PaymentIntent? CreatedCandidate { get; private set; }
+
+        public PaymentId? FoundWithId { get; private set; }
+
+        public PaymentIntent? FoundIntent { get; init; }
+
+        public ValueTask<PaymentIntentCreateResult> CreateOrGetAsync(
+            IdempotencyKey idempotencyKey,
+            PaymentIntent candidate,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CreatedWithKey = idempotencyKey;
+            CreatedCandidate = candidate;
+            return ValueTask.FromResult(new PaymentIntentCreateResult(
+                PaymentIntentCreateDisposition.Created,
+                candidate));
+        }
+
+        public ValueTask<PaymentIntent?> FindByIdAsync(
+            PaymentId paymentId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FoundWithId = paymentId;
+            return ValueTask.FromResult(FoundIntent);
+        }
     }
 }

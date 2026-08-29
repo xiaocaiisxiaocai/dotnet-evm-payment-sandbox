@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 6, including the accepted Gate A baseline; and
+1. the implementation through Week 7, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 6
+## Implemented architecture through Week 7
 
 ```mermaid
 flowchart LR
@@ -19,8 +19,9 @@ flowchart LR
     Domain --> DomainTests[Domain tests<br/>xUnit v3 + MTP]
     Domain --> API[PaymentSandbox.Api]
     Client[Loopback HTTP client] --> API
-    API --> Memory[(Process-local intent store)]
-    API --> APITests[Real Kestrel HTTP tests]
+    API --> SQLite[(SQLite intent store)]
+    Migration[Versioned schema migration] --> SQLite
+    API --> APITests[Real Kestrel + SQLite tests]
     Domain --> Contracts[PaymentSandbox.Contracts]
     ABI[Reviewed Router ABI] --> Contracts
     Baseline[Reviewed runtime Keccak] --> Contracts
@@ -40,12 +41,13 @@ flowchart LR
     CI --> SecretScan
 ```
 
-Week 6 adds the first runnable .NET application, but keeps it independent from
-RPC and Contracts. `PaymentSandbox.Api` accepts and reads off-chain intents from
-a volatile in-memory store. `PaymentSandbox.Domain` remains unaware of ASP.NET
-Core and Nethereum. `PaymentSandbox.Contracts` still exposes only chain-ID/code
-identity observations plus local unsigned calldata encoding. CI needs no
-external RPC, database, wallet, or credential.
+Week 6 added the first runnable .NET application, and Week 7 replaces its
+volatile dictionary with a migration-owned local SQLite database. The API stays
+independent from RPC and Contracts. `PaymentSandbox.Domain` remains unaware of
+ASP.NET Core, SQL, and Nethereum. `PaymentSandbox.Contracts` still exposes only
+chain-ID/code identity observations plus local unsigned calldata encoding. CI
+uses isolated temporary databases and needs no external RPC, database service,
+wallet, or credential.
 
 ### Build and dependency boundary
 
@@ -88,18 +90,20 @@ reference `PaymentSandbox.Contracts`: creating an intent neither requires nor
 proves a chain connection.
 
 The create boundary normalizes chain IDs, raw amounts, and address casing before
-idempotency comparison. One process-wide lock protects both in-memory indexes,
-so a concurrent retry can publish only one `(Idempotency-Key, PaymentId)` pair.
-Equal terms replay the original resource; different terms return a conflict
-without returning the old intent. The response state `created` describes only
-off-chain acceptance.
+idempotency comparison. A SQLite `UNIQUE COLLATE BINARY` key arbitrates
+concurrent writers. The store attempts an insert before reading a conflict, and
+keeps both operations in one transaction, so it has no check-then-insert window.
+Equal terms replay the durable original resource; different terms return a
+conflict without returning that intent. The response state `created` still
+describes only off-chain acceptance.
 
-This implementation is not durable or horizontally scalable. Restarting the
-process loses every intent and key, and separate processes cannot coordinate
-their retries. There is also no authentication, authorization, tenant boundary,
-rate limiting, expiry, capacity control, or production hosting configuration.
-Week 7 persistence must replace the lock with an equivalent database unique
-constraint and transaction, not a check-then-insert race.
+An application-owned startup migration creates `STRICT` schema and migration
+tables. Unknown future versions or mismatched known migration names fail startup.
+The default database survives process restart, and processes using the same
+local file share its idempotency constraint. This is not cross-host horizontal
+scaling, database encryption, backup, tamper evidence, or disaster recovery.
+There is still no authentication, authorization, tenant boundary, rate limiting,
+expiry, capacity control, or production hosting configuration.
 
 ### Contract boundary
 
@@ -113,15 +117,14 @@ The Router is token-agnostic and has no production token policy. An emitted amou
 
 ## Planned payment architecture
 
-The Router and process-local API portions of the following diagram exist. Durable
-persistence, wallet integration, indexer, ledger, reconciliation, and signer
-paths are targets, not current implementations:
+The Router, API, and SQLite intent store portions of the following diagram exist.
+Wallet integration, indexer, ledger, reconciliation, and signer paths are
+targets, not current implementations:
 
 ```mermaid
 flowchart LR
     Client[Client] --> API[Payment Intent API]
-    API --> Memory[(Volatile in-memory store)]
-    API -. persists later .-> IntentStore[(Durable intent store)]
+    API --> IntentStore[(SQLite intent store)]
     API -. returns payment data .-> Wallet[User wallet]
     Wallet -. user-signed transfer .-> Router[PaymentRouter]
     Router -. transfers token directly .-> Merchant[Merchant wallet]
@@ -166,7 +169,7 @@ The architecture must preserve these rules as implementation grows:
 
 Most of these remain roadmap invariants. The current code establishes exact
 value types, a narrow non-custodial contract boundary, executable contract
-failure cases, a bounded .NET identity gate, and process-local business
+failure cases, a bounded .NET identity gate, and durable local business
 idempotency; it does not implement off-chain settlement.
 
 ## Trust boundaries
@@ -181,9 +184,10 @@ Current and future code must treat the following as untrusted input:
 - Any secret found in source control; committing a key makes it compromised, not merely misplaced.
 
 CI intentionally needs no external RPC endpoint or signing secret. Week 5
-identity tests use an in-memory fake, while Week 6 API tests use a real Kestrel
-listener bound to an ephemeral loopback port; see [Threat model](threat-model.md)
-for the active and residual controls.
+identity tests use an in-memory fake, while Week 7 API tests use real Kestrel
+listeners and isolated temporary SQLite files to exercise migration, restart,
+constraints, and concurrent connections; see [Threat model](threat-model.md) for
+the active and residual controls.
 
 ## Verification boundary
 

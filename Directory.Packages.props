@@ -12,5 +12,8 @@
     <PackageVersion Include="Nethereum.Web3" Version="6.1.0" />
     <!-- Nethereum accepts < 14; pin above its vulnerable 11.0.2 dependency floor. -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
+
+    <!-- Used only by the API persistence adapter and its integration tests. -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
   </ItemGroup>
 </Project>

@@ -116,6 +116,43 @@ public sealed class PaymentIntentHttpTests
         }
     }
 
+    [Fact]
+    public async Task Restart_PreservesLookupAndIdempotentReplay()
+    {
+        await using var database = new TemporarySqliteDatabase();
+        PaymentIntentResponse createdBody;
+
+        await using (ApiTestHost firstHost = await ApiTestHost.StartAsync(
+            new FixedTimeProvider(Now),
+            database.DatabasePath))
+        {
+            using HttpResponseMessage created = await PostAsync(
+                firstHost.Client,
+                "restart-safe-key",
+                ValidRequest());
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            createdBody = await ReadIntentAsync(created);
+        }
+
+        await using (ApiTestHost restartedHost = await ApiTestHost.StartAsync(
+            new FixedTimeProvider(Now.AddDays(1)),
+            database.DatabasePath))
+        {
+            using HttpResponseMessage queried = await restartedHost.Client.GetAsync(
+                $"/v1/payment-intents/{createdBody.PaymentId}",
+                TestContext.Current.CancellationToken);
+            using HttpResponseMessage replayed = await PostAsync(
+                restartedHost.Client,
+                "restart-safe-key",
+                ValidRequest());
+
+            Assert.Equal(HttpStatusCode.OK, queried.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal(createdBody, await ReadIntentAsync(queried));
+            Assert.Equal(createdBody, await ReadIntentAsync(replayed));
+        }
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
