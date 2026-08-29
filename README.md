@@ -7,9 +7,9 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-4 complete; Week 5 is next.
+**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-5 complete; Week 6 is next.
 
-Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, and Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable.
+Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, and Week 5 introduced the first narrow .NET contract adapter.
 
 Implemented in the current repository:
 
@@ -23,6 +23,9 @@ Implemented in the current repository:
 - Six- and eighteen-decimal test tokens, a local deployment script, example-based tests, permit tests, fuzz tests, and invariant tests exercise the contract boundary.
 - A fee-on-transfer test fixture proves that `SafeERC20` success and `PaymentRecorded.amount` do not guarantee the merchant's exact balance delta.
 - A committed Router ABI and reviewed baseline pin selectors, event topic, empty storage layout, compile settings, dependency commits, runtime size, and runtime code hash.
+- `PaymentSandbox.Contracts` maps the reviewed ABI to typed Nethereum functions, event, and errors while keeping Nethereum out of Domain.
+- A fail-closed connector validates operator configuration, `eth_chainId`, the configured Router address, and `eth_getCode` runtime Keccak before exposing a local calldata encoder.
+- The public Contracts API has no account, signer, broadcast, receipt-polling, or settlement method; its RPC surface is limited to two identity observations.
 - Verification replays compilation, local deployment, successful payment, and revert from a disposable directory containing only Git-known source and the two direct contract dependencies.
 - The Foundry toolchain is pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
 - Local verification and remote CI check the locked .NET build/tests, Foundry formatting/build/tests, local RPC observation, and committed secrets. Gate A run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588), Week 2 run [`33102551138`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33102551138), Week 3 run [`33127124223`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33127124223), and Week 4 run [`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343) each passed all three jobs at their respective milestones.
@@ -30,8 +33,8 @@ Implemented in the current repository:
 
 Deliberately not implemented yet:
 
-- Nethereum RPC calls, generated contract bindings, or trusted-chain checks.
 - Payment Intent API, database schema, indexer, ledger, or reconciliation.
+- Application startup wiring, a deployment registry, trusted-block/cross-provider checks, or a public-network Router address.
 - .NET transaction signing, broadcasting, nonce management, SIWE, or off-chain EIP-712/permit construction and validation.
 - Production token allowlisting, fee-on-transfer/rebasing support, on-chain payment state, pause/admin/upgrade/rescue controls, or an audited deployment.
 - Mainnet support, custody, production key management, or production operations.
@@ -93,9 +96,11 @@ Do not add a private key to `.env.example`, source files, command history, test 
 | `global.json`                              | Selects the exact .NET SDK and Microsoft Testing Platform runner.                                                        |
 | `Directory.Build.props`                    | Applies common compiler, warning, deterministic-build, and lock-file rules.                                              |
 | `Directory.Packages.props`                 | Owns reviewed NuGet versions; project files do not choose versions.                                                      |
-| `PaymentSandbox.slnx`                      | Contains the current Domain and Domain test projects.                                                                    |
+| `PaymentSandbox.slnx`                      | Contains the Domain and Contracts projects with their test projects.                                                     |
 | `src/PaymentSandbox.Domain/`               | Pure domain values and invariants; no RPC, database, ASP.NET, or signer dependencies.                                    |
 | `tests/PaymentSandbox.Domain.Tests/`       | Executable specifications for the Domain project.                                                                        |
+| `src/PaymentSandbox.Contracts/`            | Typed Router ABI projection, read-only identity RPC adapter, trust policy, and verified local calldata encoder.          |
+| `tests/PaymentSandbox.Contracts.Tests/`    | Network-free identity, failure-boundary, ABI selector, event-indexing, and calldata tests.                               |
 | `contracts/`                               | Independent Foundry workspace containing the test-only Router, test tokens, local deployment script, and contract tests. |
 | `contracts/abi/PaymentRouter.json`         | Reviewed standard ABI array for later typed client generation.                                                          |
 | `contracts/baselines/PaymentRouter.v1.json` | Reviewed toolchain, selector, storage-layout, size, and runtime-code identity.                                         |
@@ -108,6 +113,7 @@ Do not add a private key to `.env.example`, source files, command history, test 
 | `docs/learning/week-02-evm-observation.md` | Explains how to read the observer's transactions, receipts, logs, gas, nonce, revert, and finality evidence.             |
 | `docs/learning/week-03-payment-router-v1.md` | Explains Router execution order, atomic units, allowance, event meaning, repeated IDs, and token semantic risks.       |
 | `docs/learning/week-04-contract-hardening.md` | Explains the reviewed ABI/runtime baseline, stronger properties, clean replay, and update procedure.                  |
+| `docs/learning/week-05-contract-adapter.md` | Explains typed binding, fail-closed RPC identity checks, calldata encoding, and remaining trust limits.                |
 | `docs/threat-model.md`                     | Records protected assets, trust boundaries, threats, and current controls.                                               |
 | `docs/decisions/`                          | Records architectural decisions and their trade-offs.                                                                    |
 
@@ -131,17 +137,19 @@ Week 3 makes the Router v1 boundary explicit. Exact allowance assertions show wh
 
 Week 4 freezes a reviewed v1 consumer contract without changing `PaymentRouter` source. The committed ABI is regenerated and structurally compared; compile settings, direct dependency commits, selectors, event topic, empty storage layout, 1,030-byte runtime, and runtime Keccak are checked independently. Fuzz and invariant evidence now covers random same-ID partitions, arbitrary insufficient-balance rollback, balance/supply conservation, and unlimited allowance behavior. The deployment observation runs from an isolated Git-known source snapshot so ignored artifacts cannot satisfy the check. Commit [`c146420`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/c146420c837b0ab5127595377b7a9dbd372b942c) and CI run [`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343) record the implementation and cross-platform evidence. See the [Week 4 hardening guide](docs/learning/week-04-contract-hardening.md).
 
+Week 5 adds the first Nethereum boundary without adding a runtime payment service. A narrow RPC interface observes only chain ID and latest deployed code. The connector validates those observations against an operator-reviewed policy and returns a `VerifiedPaymentRouterClient` only after the runtime Keccak matches. That client generates unsigned `pay` and `payWithPermit` calldata from Domain values; it cannot sign or send. The check constrains accidental wrong-chain/address/code use but still trusts one RPC endpoint and is neither finality nor proof of an honest provider. See the [Week 5 contract adapter guide](docs/learning/week-05-contract-adapter.md).
+
 ## Architecture rules
 
 - Domain code owns business meaning and invariants, not infrastructure concerns.
-- Chain, RPC, persistence, and signing adapters will depend on Domain; Domain will not depend on them.
+- Chain, RPC, persistence, and signing adapters depend on Domain; Domain does not depend on them.
 - The contract and .NET toolchains remain independently buildable and testable.
 - Chain observations are not final settlement until later indexer/finality rules say so.
 - A payment identifier correlates evidence; it never authorizes value movement.
 - Raw on-chain values remain exact integers. Formatting is an edge concern.
 - Contract-baseline drift requires explicit interface, bytecode, dependency, and downstream-consumer review.
 
-See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), and [Week 4](docs/learning/week-04-contract-hardening.md) learning guides for the rationale and evidence.
+See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), and [Week 5](docs/learning/week-05-contract-adapter.md) learning guides for the rationale and evidence.
 
 ## Roadmap
 
@@ -151,8 +159,9 @@ See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/de
 | Week 2             | **Complete:** executable Anvil observation of successful and reverted transactions, receipts, logs, nonce, exact balances, and gas cost.                                            |
 | Week 3             | **Complete:** Router v1 execution/allowance/event evidence, repeated and partial payments, and an executable fee-on-transfer limitation.                                             |
 | Week 4             | **Complete:** reviewed ABI/runtime/version/storage baseline, stronger fuzz/invariants, and clean tracked-source deployment replay.                                                    |
-| Week 5 next        | Add generated typed Nethereum access with trusted chain ID, configured address, and deployed-code identity checks.                                                                  |
-| Weeks 6-12         | Add Payment Intent API, reorg-safe indexing, append-only ledger, finality, and reconciliation.                                                                                       |
+| Week 5             | **Complete:** typed Nethereum ABI access, fail-closed chain/address/runtime-code identity checks, and unsigned local calldata encoding.                                               |
+| Week 6 next        | Add the first Payment Intent API boundary without signing, broadcasting, indexing, or claiming settlement.                                                                          |
+| Weeks 7-12         | Add reorg-safe indexing, append-only ledger, finality, and reconciliation.                                                                                                            |
 | Weeks 13-19        | Add a test-only transaction lifecycle orchestrator, SIWE, and separate EIP-712/permit replay controls.                                                                              |
 | Weeks 20-24        | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                          |
 

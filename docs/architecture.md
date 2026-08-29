@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the accepted Gate A baseline; and
+1. the implementation through Week 5, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Accepted Gate A architecture
+## Implemented architecture through Week 5
 
 ```mermaid
 flowchart LR
@@ -17,6 +17,11 @@ flowchart LR
     Packages[central package versions<br/>and lock files] --> Build
     Build --> Domain[PaymentSandbox.Domain]
     Domain --> DomainTests[Domain tests<br/>xUnit v3 + MTP]
+    Domain --> Contracts[PaymentSandbox.Contracts]
+    ABI[Reviewed Router ABI] --> Contracts
+    Baseline[Reviewed runtime Keccak] --> Contracts
+    RPC[Untrusted JSON-RPC] -. chainId + getCode .-> Contracts
+    Contracts --> ContractAdapterTests[Network-free adapter tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
     Router --> ContractChecks[Example, permit, fuzz,<br/>and invariant tests]
@@ -31,7 +36,7 @@ flowchart LR
     CI --> SecretScan
 ```
 
-There is no .NET runtime application in the accepted baseline. The Domain project does not call the contracts, and no RPC adapter connects the two build systems. Their repository-level integration is the shared verification contract: a fresh checkout must restore, build, test, and scan without a key or RPC credential. Gate A exercised that contract from an isolated Windows clone and in remote CI.
+There is still no .NET runtime application. Week 5 adds a library adapter between reviewed contract artifacts and future application code, but no executable starts it and CI needs no external RPC or credential. `PaymentSandbox.Domain` remains unaware of Nethereum. `PaymentSandbox.Contracts` depends on Domain, projects the reviewed ABI into typed messages, and exposes only chain-ID/code identity observations plus local unsigned calldata encoding.
 
 ### Build and dependency boundary
 
@@ -53,6 +58,14 @@ The current values are:
 - `RawTokenAmount`: an exact integer constrained to the EVM `uint256` range.
 
 These types defend facts that every later adapter must preserve. They do not decide whether a payment is final, credited, authorized, or compliant.
+
+### .NET contract adapter boundary
+
+`PaymentSandbox.Contracts` is the first implemented infrastructure adapter. Its public RPC interface contains only `GetChainIdAsync` and `GetCodeAsync`; it has no account, private key, signer, send-transaction, or receipt-polling member. `PaymentRouterConnector` validates a `PaymentRouterTrustPolicy` in fail-closed order: local chain/address/hash configuration, observed chain ID, deployed code at the configured address, then Keccak-256 of those exact runtime bytes. Only a match returns `VerifiedPaymentRouterClient`.
+
+The verified client locally encodes the reviewed `pay` and `payWithPermit` shapes from `PaymentId` and `RawTokenAmount`. Its result is destination plus calldata, not a transaction and not authorization. It also mirrors immediate Router input failures such as zero amount, malformed/zero addresses, Router-as-merchant, invalid `uint256`, and incorrectly sized signature components.
+
+This identity check is intentionally bounded. One endpoint can lie consistently about both chain ID and code, `latest` can reorg, and code can be observed again later. Trusted-block anchoring, cross-provider comparison, finality, event indexing, and settlement remain later work.
 
 ### Contract boundary
 
@@ -93,7 +106,7 @@ The later transaction orchestrator is a separate, test-only capability. It must 
 | Component                     | Owns                                                                              | Must not own                                                                 |
 | ----------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `PaymentSandbox.Domain`       | Value objects, states, invariants, policy inputs                                  | RPC, SQL, HTTP, signing, environment configuration                           |
-| `PaymentSandbox.Contracts`    | Generated ABI types and narrow contract client adapters                           | Business settlement decisions, private keys                                  |
+| `PaymentSandbox.Contracts`    | Typed ABI messages, chain/code identity checks, unsigned local calldata            | Business settlement decisions, private keys, signing or broadcasting          |
 | `PaymentSandbox.Api`          | Payment intent use cases, validation, idempotent HTTP boundary                    | Chain history truth, direct key material                                     |
 | `PaymentSandbox.Indexer`      | Block/log ingestion, checkpoints, canonical occurrences, reorg handling           | Mutating chain state, overwriting history                                    |
 | `PaymentSandbox.Orchestrator` | Test-only transaction requests, attempts, nonce coordination, replacement history | Custody claims, arbitrary signing                                            |
@@ -114,7 +127,7 @@ The architecture must preserve these rules as implementation grows:
 6. Signing policy validates chain, destination, selector, token, amount, and limits before a signer receives a payload.
 7. Login signatures, payment intents, and permits have separate domains and replay controls.
 
-Most of these remain roadmap invariants. The current Gate A code establishes exact value types, a narrow non-custodial contract boundary, and executable contract failure cases; it does not yet implement off-chain settlement.
+Most of these remain roadmap invariants. The current code establishes exact value types, a narrow non-custodial contract boundary, executable contract failure cases, and a bounded .NET identity gate; it does not implement off-chain settlement.
 
 ## Trust boundaries
 
@@ -122,12 +135,12 @@ Future code must treat the following as untrusted input:
 
 - HTTP requests and configuration values.
 - RPC responses, provider availability, and unfinalized chain data.
-- Contract addresses, code hashes, token metadata, and chain IDs until checked.
+- Contract addresses, expected code hashes, and chain IDs are untrusted configuration until syntactically validated; RPC observations remain untrusted even after they match that policy.
 - Wallet signatures until domain, nonce, time, chain, and signer checks pass.
 - Database state that cannot be traced to a migration and source observation.
 - Any secret found in source control; committing a key makes it compromised, not merely misplaced.
 
-Gate A CI intentionally needs no RPC endpoint or signing secret. See [Threat model](threat-model.md) for the active controls.
+CI intentionally needs no external RPC endpoint or signing secret. Week 5 identity tests use an in-memory fake; see [Threat model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary
 

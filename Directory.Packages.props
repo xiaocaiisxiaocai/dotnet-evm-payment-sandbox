@@ -8,10 +8,9 @@
   <ItemGroup>
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
 
-    <!--
-      Reserved for the chain adapter introduced later in the roadmap. Keeping
-      it here documents the reviewed version; the Domain project does not use it.
-    -->
+    <!-- Used only by PaymentSandbox.Contracts. Domain remains dependency-free. -->
     <PackageVersion Include="Nethereum.Web3" Version="6.1.0" />
+    <!-- Nethereum accepts < 14; pin above its vulnerable 11.0.2 dependency floor. -->
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 </Project>

@@ -1,7 +1,7 @@
 # Threat Model v0
 
-- Status: Week 1 security baseline
-- Last updated: 2026-08-28
+- Status: Week 5 bounded update to the Week 1 security baseline
+- Last updated: 2026-08-29
 - Owner: repository maintainer
 
 ## 1. Purpose
@@ -14,7 +14,7 @@ The current model covers:
 
 - The developer workstation, Git working tree, and repository-local `.tools` directory.
 - The GitHub repository and read-only GitHub Actions workflows.
-- The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including permit, fuzz, invariant, and local deployment tests.
+- The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including the typed contract adapter, identity checks, permit, fuzz, invariant, and local deployment tests.
 - Local Anvil, plus one later smoke test on Ethereum Sepolia.
 - The API, Indexer, SQLite database, Ledger, Orchestrator, and SIWE components planned for later gates.
 
@@ -47,7 +47,7 @@ Test signing request -> Orchestrator -> isolated test wallet -> Anvil/Sepolia
 Boundary assumptions:
 
 - Download sites and third-party Actions are supply-chain boundaries. A version label alone is insufficient; Actions use commit SHAs and downloaded archives use fixed SHA-256 values.
-- RPC output is untrusted. Later code must validate chain identity, trusted blocks, contract addresses, and code hashes, then account for reorgs and finality.
+- RPC output is untrusted. Week 5 checks self-reported chain ID and latest code at an operator-configured address against a reviewed runtime hash. Trusted blocks, independent cross-checks, reorg handling, and finality remain later controls.
 - Pull-request code is untrusted input. CI has no deployment key, does not use `pull_request_target`, retains no checkout credentials, and receives only `contents: read` permission.
 - Local SQLite files and logs do not provide production-grade confidentiality or tamper resistance.
 
@@ -58,7 +58,7 @@ Boundary assumptions:
 | Test-wallet private key or mnemonic | Unauthorized signatures and loss of test assets | Never committed, passed to CI, or logged; Sepolia uses an isolated burner |
 | Credential-bearing RPC URL | Quota theft and activity disclosure | Stored only in ignored local configuration; examples contain no credential |
 | Signed raw transaction | Can be replayed while valid | Not implemented before Gate D; later treated as sensitive and never logged |
-| Chain, contract, and code-hash configuration | Wrong-chain execution or incorrect credit | Startup and RPC-switch validation planned for Gate B |
+| Chain, contract, and code-hash configuration | Wrong-chain execution or incorrect credit | Local syntax checks and chain/address/runtime matching implemented; application startup, trusted-block, and RPC-switch controls remain Gate B work |
 | Payment intents, events, and ledger | Duplicate credit, lost entries, or unexplained differences | Idempotency, reorg handling, append-only entries, and reconciliation planned for Gates B/C |
 | CI token and workflow | Repository or release-chain modification | Read-only permission, pinned Actions, and no persisted checkout credential |
 | Dependency graph and build tools | Replaced or non-reproducible builds | Exact SDK/tool versions, NuGet locks, gitlinks, and verified archive hashes |
@@ -86,7 +86,7 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 | S02 | A movable Action tag or replaced archive executes malicious build code | Low | High | Full Action commit SHAs; Foundry and Gitleaks archives use platform-specific SHA-256 | Controlled | Gate A |
 | S03 | A pull request abuses a privileged token or secret | Medium | High | Read-only token, no persisted credential, no CI secret, no `pull_request_target` | Controlled | Gate A |
 | S04 | A public Anvil default key is reused on Sepolia or mainnet | Medium | High | Explicit local-only boundary and a separate Sepolia burner | Controlled | Gate A |
-| S05 | A malicious or incorrect RPC reports the wrong chain or contract state | Medium | High | Validate chain ID, trusted block, contract address, and code hash; cross-check critical data | Planned | Gate B |
+| S05 | A malicious or incorrect RPC reports the wrong chain or contract state | Medium | High | Week 5 fails closed on chain ID, configured address, missing/malformed code, and runtime Keccak; trusted-block and independent-provider checks remain | Partly controlled | Gate B |
 | S06 | Configuration error deploys or signs on mainnet | Low | High | `DeployLocal` already fails closed outside chain ID `31337`; future signing and Sepolia entry points must use an explicit allowlist and reject chain ID `1` | Partly controlled | Gates A/B |
 | S07 | Reorg, truncated logs, or incorrect finality causes false credit | Medium | High | Canonical blocks, common-ancestor rollback, finality anchors, and fault tests | Planned | Gates B/C |
 | S08 | Retry, concurrent nonce use, or unknown broadcast causes double payment | Medium | High | Business idempotency, nonce coordination, persisted raw transaction/hash, same-payload rebroadcast | Planned | Gate D |
