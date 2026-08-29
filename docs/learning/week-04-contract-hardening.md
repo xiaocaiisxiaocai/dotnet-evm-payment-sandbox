@@ -203,3 +203,26 @@ does not provide a generated .NET binding, RPC trust policy, deployment
 registry, public testnet address, audit, production token policy, monitoring,
 or incident response. Those remain later milestones rather than implied
 features of a green baseline check.
+
+## Verification evidence
+
+The Week 4 implementation is commit
+[`c146420`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/c146420c837b0ab5127595377b7a9dbd372b942c).
+On 2026-08-29, the supported Windows verification entry point passed 15 .NET
+tests and 36 Foundry tests across five suites. Four fuzz properties ran 256
+inputs each, and four invariant campaigns each ran 64 runs by 2,048 calls with
+zero handler reverts.
+
+The same run reconstructed the reviewed ABI, selectors, event topic, zero-slot
+storage layout, 1,030-byte runtime, and runtime Keccak. It copied 1,014 Git-known
+files into a disposable source directory, compiled and deployed from that
+directory, checked successful and reverted payment evidence, stopped Anvil,
+removed the directory, proved the dynamic Gitleaks canary, and found no leaks in
+the candidate working tree or complete seven-commit history.
+
+GitHub Actions run
+[`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343)
+then passed all three jobs on the implementation commit. Its Ubuntu Foundry job
+checked out only the repository's direct submodules and passed the reviewed
+baseline, all 36 tests, and clean tracked-source RPC replay. This is bounded
+reproducibility evidence, not a security audit or production deployment.
