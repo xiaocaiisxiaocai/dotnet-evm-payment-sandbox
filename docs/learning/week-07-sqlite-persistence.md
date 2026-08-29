@@ -173,6 +173,8 @@ authentication, authorization, rate limits, storage quotas, or cross-host
 coordination. An unauthenticated client can still grow the database or create
 lock pressure, so the API remains loopback/test-only.
 
-Week 8 can begin the chain-observation schema and checkpoint boundary. It must
-keep intent state separate from unfinalized logs: durable `created` still means
-only that the off-chain request exists.
+Week 8 now adds a separate chain-observation schema and checkpoint boundary. It
+keeps intent state separate from unfinalized logs: durable `created` still means
+only that the off-chain request exists. Parent mismatch currently stops the
+scan; common-ancestor recovery remains later work. See the [Week 8 observation
+guide](week-08-chain-observation-checkpoints.md).

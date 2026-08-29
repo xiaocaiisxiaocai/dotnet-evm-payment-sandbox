@@ -3,10 +3,12 @@
     <Project Path="src/PaymentSandbox.Api/PaymentSandbox.Api.csproj" />
     <Project Path="src/PaymentSandbox.Contracts/PaymentSandbox.Contracts.csproj" />
     <Project Path="src/PaymentSandbox.Domain/PaymentSandbox.Domain.csproj" />
+    <Project Path="src/PaymentSandbox.Indexer/PaymentSandbox.Indexer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PaymentSandbox.Api.Tests/PaymentSandbox.Api.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Contracts.Tests/PaymentSandbox.Contracts.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Domain.Tests/PaymentSandbox.Domain.Tests.csproj" />
+    <Project Path="tests/PaymentSandbox.Indexer.Tests/PaymentSandbox.Indexer.Tests.csproj" />
   </Folder>
 </Solution>
