@@ -270,6 +270,15 @@ stores. It qualifies a payment at three confirmations, replaces its three-block
 suffix, consumes the Ledger reversal, and proves Finality appends a linked
 `ledger_effect_reversed` revocation while all earlier evidence remains present.
 
+The 2026-08-30 committed-snapshot verification passed 171/171 .NET tests. The
+focused counts were Indexer 40/40, Ledger 20/20, and Finality 18/18. The same run
+passed all 36 unchanged Foundry tests, the reviewed 1,030-byte/zero-storage-slot
+Router baseline, and successful/reverted Anvil observation replay from 1,152
+Git-known files. The dynamic secret canary, candidate working-tree scan, and
+complete 23-commit history scan found no leaks. Implementation commit
+[`f8c8a69`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/f8c8a69)
+records the boundary verified here.
+
 ## What remains for Week 12 and later
 
 Week 11 does not add:
