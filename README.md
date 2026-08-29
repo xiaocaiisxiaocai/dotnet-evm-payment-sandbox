@@ -259,9 +259,11 @@ delivery evidence. See the [Week 10 ledger guide](docs/learning/week-10-reversib
 The 2026-08-30 Week 10 local verification passed 152/152 .NET tests, including
 the 40-test focused Indexer suite and 19-test focused Ledger suite, all 36
 unchanged Foundry tests, the reviewed Router baseline, and successful/reverted
-Anvil observation replay from 1,099 Git-known files. The dynamic secret canary
-and working-tree/full-history scans also passed across the complete 19-commit
-history.
+Anvil observation replay from 1,126 Git-known files. The dynamic secret canary
+and working-tree/full-history scans also passed across the complete 20-commit
+history. Implementation commit
+[`60643db`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/60643db)
+records the Week 10 boundary.
 
 ## Architecture rules
 

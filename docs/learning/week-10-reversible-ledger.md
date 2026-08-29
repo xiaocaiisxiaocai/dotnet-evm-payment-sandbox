@@ -214,8 +214,10 @@ replacement fork, projects the new high-watermark, and proves:
 The 2026-08-30 full local entry point passed 152/152 .NET tests (40 focused
 Indexer and 19 focused Ledger), 36/36 unchanged Foundry tests, the reviewed
 1,030-byte/zero-storage Router baseline, and successful/reverted Anvil replay
-from 1,099 Git-known files. The dynamic secret canary and scans of the candidate
-working tree plus complete 19-commit history also passed.
+from 1,126 Git-known files. The dynamic secret canary and scans of the candidate
+working tree plus complete 20-commit history also passed. Implementation commit
+[`60643db`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/60643db)
+records the tested Week 10 boundary.
 
 ## What remains for Week 11 and later
 
