@@ -224,7 +224,24 @@ treat chain observations and payment settlement as later capabilities.
 
 ## Verification evidence
 
-The Week 5 implementation has 26 network-free Contracts tests. Together with
-the existing Domain suite, the Release test run passes 41 tests with zero failed
-or skipped tests. Full Foundry, clean-deployment, secret-scan, and remote CI
-evidence is recorded after the implementation commit is pushed.
+The Week 5 implementation is commit
+[`9969cd6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/9969cd6).
+On 2026-08-29, the supported Windows verification entry point passed 26
+network-free Contracts tests plus 15 Domain tests, for 41 .NET tests with zero
+failed or skipped. The unchanged contract boundary also passed all 36 Foundry
+tests: four fuzz properties each ran 256 inputs, and four invariant campaigns
+each ran 64 runs by 2,048 calls with zero handler reverts.
+
+The same run rechecked the 1,030-byte runtime, zero storage slots, and reviewed
+runtime Keccak. It copied 1,033 Git-known files into a disposable source tree,
+compiled and deployed there, checked successful and reverted transaction
+evidence, stopped Anvil, and confirmed temporary-directory cleanup. The dynamic
+Gitleaks canary, candidate working tree, and complete nine-commit history scan
+also passed.
+
+GitHub Actions run
+[`33257669877`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33257669877)
+then passed all three jobs on Ubuntu: locked .NET build/tests, Foundry
+build/tests/clean RPC replay, and working-rule plus full-history secret scanning.
+This remains bounded test evidence, not an RPC trust guarantee, audit, public
+deployment, or production authorization.
