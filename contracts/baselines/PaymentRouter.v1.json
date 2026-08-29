@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "contract": "src/PaymentRouter.sol:PaymentRouter",
+  "toolchain": {
+    "foundry": {
+      "version": "1.7.1",
+      "commit": "4072e48705af9d93e3c0f6e29e93b5e9a40caed8"
+    },
+    "solc": "0.8.36",
+    "evmVersion": "prague",
+    "optimizerEnabled": true,
+    "optimizerRuns": 200,
+    "bytecodeHash": "ipfs",
+    "openzeppelinContracts": {
+      "version": "5.7.0",
+      "commit": "cab19933c33c2ad1d4c7a84864a3601dddfd16f3"
+    },
+    "forgeStd": {
+      "version": "1.16.1",
+      "commit": "620536fa5277db4e3fd46772d5cbc1ea0696fb43"
+    }
+  },
+  "interface": {
+    "methodIdentifiers": {
+      "pay(bytes32,address,address,uint256)": "76bbf425",
+      "payWithPermit(bytes32,address,address,uint256,uint256,uint8,bytes32,bytes32)": "1f2b568e"
+    },
+    "errors": {
+      "InvalidAmount()": "2c5211c6",
+      "InvalidMerchant(address)": "fbc8ce7e",
+      "InvalidPaymentId()": "b11be8c4",
+      "InvalidToken(address)": "961c9a4f",
+      "SafeERC20FailedOperation(address)": "5274afe7"
+    },
+    "events": {
+      "PaymentRecorded(bytes32,address,address,address,uint256)": "0xa3c98d2a8a41cf6c27fd990afbd1c1b88bae461cdd447ca141d7934084b1cc04"
+    }
+  },
+  "runtime": {
+    "sizeBytes": 1030,
+    "keccak256": "0x8308fbd23f6bd4bcb4284281ab9388b2a437297aa512a8308b4c2e390205e92c"
+  },
+  "storageLayout": {
+    "storage": [],
+    "types": {}
+  }
+}

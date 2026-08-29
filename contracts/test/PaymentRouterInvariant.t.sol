@@ -8,7 +8,7 @@ import {PaymentRouter} from "../src/PaymentRouter.sol";
 import {TestUSDC} from "../src/testtokens/TestUSDC.sol";
 
 contract PaymentHandler {
-    uint256 internal constant STARTING_BALANCE = type(uint128).max;
+    uint256 public constant STARTING_BALANCE = type(uint128).max;
     uint256 internal constant MAX_PAYMENT = 1_000_000e6;
 
     PaymentRouter public immutable router;
@@ -61,5 +61,18 @@ contract PaymentRouterInvariantTest is StdInvariant, Test {
 
     function invariant_merchantBalanceMatchesEveryHandledPayment() public view {
         assertEq(token.balanceOf(merchant), handler.totalPaid());
+    }
+
+    function invariant_handlerBalanceMatchesEveryHandledPayment() public view {
+        assertEq(token.balanceOf(address(handler)), handler.STARTING_BALANCE() - handler.totalPaid());
+    }
+
+    function invariant_supplyAndUnlimitedAllowanceRemainConserved() public view {
+        uint256 accountedBalance =
+            token.balanceOf(address(handler)) + token.balanceOf(merchant) + token.balanceOf(address(router));
+
+        assertEq(accountedBalance, token.totalSupply());
+        assertEq(token.totalSupply(), handler.STARTING_BALANCE());
+        assertEq(token.allowance(address(handler), address(router)), type(uint256).max);
     }
 }

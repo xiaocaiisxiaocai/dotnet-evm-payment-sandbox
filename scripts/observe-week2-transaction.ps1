@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
     [ValidateRange(1, 65535)]
-    [int]$Port = 8545
+    [int]$Port = 8545,
+
+    # Week 4 can replay the same observation against an isolated tracked-file
+    # snapshot while continuing to use this repository's verified tool install.
+    [string]$SourceRoot
 )
 
 Set-StrictMode -Version Latest
@@ -12,12 +16,18 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw 'PowerShell 7 or newer is required for consistent process and JSON behavior across platforms.'
 }
 
-$repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$toolRepositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$repositoryRoot = if ([string]::IsNullOrWhiteSpace($SourceRoot)) {
+    $toolRepositoryRoot
+}
+else {
+    [System.IO.Path]::GetFullPath($SourceRoot)
+}
 $contractsDirectory = Join-Path $repositoryRoot 'contracts'
 $runtime = [System.Runtime.InteropServices.RuntimeInformation]
 $runningOnWindows = $runtime::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
 $executableSuffix = if ($runningOnWindows) { '.exe' } else { '' }
-$foundryDirectory = Join-Path $repositoryRoot '.tools/foundry/v1.7.1'
+$foundryDirectory = Join-Path $toolRepositoryRoot '.tools/foundry/v1.7.1'
 $forgePath = Join-Path $foundryDirectory "forge$executableSuffix"
 $castPath = Join-Path $foundryDirectory "cast$executableSuffix"
 $anvilPath = Join-Path $foundryDirectory "anvil$executableSuffix"

@@ -19,7 +19,8 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $solutionPath = Join-Path $repositoryRoot 'PaymentSandbox.slnx'
 $contractsDirectory = Join-Path $repositoryRoot 'contracts'
-$week2ObservationScript = Join-Path $PSScriptRoot 'observe-week2-transaction.ps1'
+$contractBaselineScript = Join-Path $PSScriptRoot 'verify-contract-baseline.ps1'
+$cleanContractDeploymentScript = Join-Path $PSScriptRoot 'verify-clean-contract-deployment.ps1'
 $gitleaksVersion = '8.29.1'
 $runtime = [System.Runtime.InteropServices.RuntimeInformation]
 $runningOnWindows = $runtime::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
@@ -225,7 +226,8 @@ function Remove-VerifiedTemporaryDirectory {
 foreach ($requiredPath in @(
         $solutionPath,
         $contractsDirectory,
-        $week2ObservationScript,
+        $contractBaselineScript,
+        $cleanContractDeploymentScript,
         (Join-Path $repositoryRoot '.gitleaks.toml')
     )) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
@@ -282,15 +284,19 @@ Invoke-NativeChecked -FilePath $forgePath -Arguments @('fmt', '--check') -Workin
 Write-Step 'Build Solidity contracts'
 Invoke-NativeChecked -FilePath $forgePath -Arguments @('build', '--sizes') -WorkingDirectory $contractsDirectory
 
+Write-Step 'Verify reviewed PaymentRouter v1 ABI and bytecode baseline'
+& $contractBaselineScript
+
 Write-Step 'Run Solidity tests'
 Invoke-NativeChecked -FilePath $forgePath -Arguments @('test', '-vvv') -WorkingDirectory $contractsDirectory
 
-Write-Step 'Observe a local Week 2 transaction lifecycle'
-# The observation script bounds waits and treats a failed Anvil teardown as a verification failure.
-& $week2ObservationScript -Port 18545
+Write-Step 'Replay deployment and transaction observation from a clean tracked-source snapshot'
+# The wrapper copies only Git-known source, then delegates bounded Anvil
+# lifecycle and teardown checks to the Week 2 observer.
+& $cleanContractDeploymentScript -Port 18545
 
 if ($SkipSecretScan) {
-    Write-Warning 'Secret scan was explicitly skipped. This run is not sufficient evidence for Gate A.'
+    Write-Warning 'Secret scan was explicitly skipped. This run is not complete repository verification evidence.'
 }
 else {
     Write-Step 'Download and verify Gitleaks 8.29.1'

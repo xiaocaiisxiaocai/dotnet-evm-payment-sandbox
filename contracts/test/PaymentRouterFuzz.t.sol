@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.36;
 
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+
 import {TestToken18} from "../src/testtokens/TestToken18.sol";
 import {PaymentRouterTestBase} from "./helpers/PaymentRouterTestBase.sol";
 
@@ -15,6 +17,7 @@ contract PaymentRouterFuzzTest is PaymentRouterTestBase {
 
         assertEq(usdc.balanceOf(payer), INITIAL_USDC_BALANCE - amount);
         assertEq(usdc.balanceOf(merchant), amount);
+        assertEq(usdc.allowance(payer, address(router)), 0);
         assertEq(usdc.balanceOf(address(router)), 0);
     }
 
@@ -28,7 +31,46 @@ contract PaymentRouterFuzzTest is PaymentRouterTestBase {
 
         assertEq(token18.balanceOf(payer), INITIAL_TOKEN18_BALANCE - amount);
         assertEq(token18.balanceOf(merchant), amount);
+        assertEq(token18.allowance(payer, address(router)), 0);
         assertEq(token18.balanceOf(address(router)), 0);
+    }
+
+    function testFuzz_payPreservesExactAccountingAcrossTwoSameIdParts(uint256 rawFirst, uint256 rawSecond) public {
+        // Leave at least one unit for the second payment. Binding the second
+        // value to the remainder also proves the sum cannot overflow.
+        uint256 first = bound(rawFirst, 1, INITIAL_USDC_BALANCE - 1);
+        uint256 second = bound(rawSecond, 1, INITIAL_USDC_BALANCE - first);
+        uint256 total = first + second;
+
+        vm.startPrank(payer);
+        usdc.approve(address(router), total);
+        router.pay(PAYMENT_ID, address(usdc), merchant, first);
+        router.pay(PAYMENT_ID, address(usdc), merchant, second);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(payer), INITIAL_USDC_BALANCE - total);
+        assertEq(usdc.balanceOf(merchant), total);
+        assertEq(usdc.allowance(payer, address(router)), 0);
+        assertEq(usdc.balanceOf(address(router)), 0);
+    }
+
+    function testFuzz_payRollsBackExactAllowanceForAnyInsufficientBalance(uint256 rawExtra) public {
+        uint256 extra = bound(rawExtra, 1, type(uint256).max - INITIAL_USDC_BALANCE);
+        uint256 amount = INITIAL_USDC_BALANCE + extra;
+
+        vm.prank(payer);
+        usdc.approve(address(router), amount);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, payer, INITIAL_USDC_BALANCE, amount)
+        );
+        vm.prank(payer);
+        router.pay(PAYMENT_ID, address(usdc), merchant, amount);
+
+        assertEq(usdc.balanceOf(payer), INITIAL_USDC_BALANCE);
+        assertEq(usdc.balanceOf(merchant), 0);
+        assertEq(usdc.allowance(payer, address(router)), amount);
+        assertEq(usdc.balanceOf(address(router)), 0);
     }
 
     function test_paySupportsMaximumUint256ForAStandardToken() public {
@@ -42,6 +84,7 @@ contract PaymentRouterFuzzTest is PaymentRouterTestBase {
 
         assertEq(maximumToken.balanceOf(payer), 0);
         assertEq(maximumToken.balanceOf(merchant), type(uint256).max);
+        assertEq(maximumToken.allowance(payer, address(router)), type(uint256).max);
         assertEq(maximumToken.balanceOf(address(router)), 0);
     }
 }
