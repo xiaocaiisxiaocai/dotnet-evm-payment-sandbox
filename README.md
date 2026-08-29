@@ -31,7 +31,7 @@ Implemented in the current repository:
 - First creation returns `201`; a semantically identical replay returns the original resource with `200`; conflicting key reuse returns a non-leaking `409`.
 - Verification replays compilation, local deployment, successful payment, and revert from a disposable directory containing only Git-known source and the two direct contract dependencies.
 - The Foundry toolchain is pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
-- Local verification and remote CI check the locked .NET build/tests, Foundry formatting/build/tests, local RPC observation, and committed secrets. Gate A run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588), Week 2 run [`33102551138`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33102551138), Week 3 run [`33127124223`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33127124223), Week 4 run [`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343), and Week 5 run [`33257669877`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33257669877) each passed all three jobs at their respective milestones.
+- Local verification and remote CI check the locked .NET build/tests, Foundry formatting/build/tests, local RPC observation, and committed secrets. Gate A run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588), Week 2 run [`33102551138`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33102551138), Week 3 run [`33127124223`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33127124223), Week 4 run [`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343), Week 5 run [`33257669877`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33257669877), and Week 6 run [`33259846122`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33259846122) each passed all three jobs at their respective milestones.
 - The Week 2 observer owns a disposable Anvil process, deploys through an unlocked local account, and machine-checks transaction calldata, receipts, gas, `PaymentRecorded`, balances, nonce consumption, and reverted-transaction postconditions without reading a private key.
 
 Deliberately not implemented yet:
@@ -171,7 +171,10 @@ The 2026-08-29 Week 6 local verification passed 85 .NET tests, all 36 unchanged
 Foundry tests, the reviewed contract baseline, isolated successful/reverted
 Anvil observation, the dynamic secret canary, and working-tree/full-history
 secret scans. A real loopback HTTP smoke test also produced `201` create, `200`
-safe replay, and `200` query responses.
+safe replay, and `200` query responses. Implementation commit
+[`4ffb8ba`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/4ffb8ba)
+and CI run [`33259846122`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33259846122)
+record the cross-platform evidence; all three jobs passed in 32 seconds.
 
 ## Architecture rules
 
