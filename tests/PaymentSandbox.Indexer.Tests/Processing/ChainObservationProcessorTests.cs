@@ -66,7 +66,7 @@ public sealed class ChainObservationProcessorTests
         rpc.Blocks[101] = IndexerTestData.RpcBlock(101, '2', 'f');
         ChainObservationProcessor processor = CreateProcessor(database, rpc);
 
-        ChainObservationException exception = await Assert.ThrowsAsync<ChainObservationException>(
+        ChainObservationException exception = await Assert.ThrowsAnyAsync<ChainObservationException>(
             () => processor.ScanThroughAsync(101, TestContext.Current.CancellationToken));
 
         Assert.Contains("does not extend", exception.Message, StringComparison.Ordinal);
@@ -274,6 +274,138 @@ public sealed class ChainObservationProcessorTests
                 IndexerTestData.Router,
                 TestContext.Current.CancellationToken);
         Assert.Equal(101, checkpoint!.LastBlockNumber);
+        Assert.Equal(1, checkpoint.Revision);
+    }
+
+    [Fact]
+    public async Task MultiBlockReorg_FindsAncestorSwitchesCanonicalChainAndRetainsOldFork()
+    {
+        await using var temporary = new TemporaryIndexerDatabase();
+        IndexerDatabase database = IndexerTestData.CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        FakeChainObservationRpc original = CreateReadyRpc();
+        original.Blocks[102] = IndexerTestData.RpcBlock(102, '3', '2');
+        await CreateProcessor(database, original).ScanThroughAsync(
+            102,
+            TestContext.Current.CancellationToken);
+
+        // The new node view agrees through block 100, then presents a complete
+        // replacement branch 101(a) -> 102(b) -> 103(c).
+        var fork = new FakeChainObservationRpc();
+        fork.Blocks[100] = IndexerTestData.RpcBlock(100, '1', '0');
+        fork.Blocks[101] = IndexerTestData.RpcBlock(101, 'a', '1');
+        fork.Blocks[102] = IndexerTestData.RpcBlock(102, 'b', 'a');
+        fork.Blocks[103] = IndexerTestData.RpcBlock(103, 'c', 'b');
+        fork.Logs = [IndexerTestData.RpcPayment(blockNumber: 103, blockHash: 'c')];
+
+        ChainObservationResult result = await CreateProcessor(database, fork).ScanThroughAsync(
+            103,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ChainObservationDisposition.Reorganized, result.Disposition);
+        Assert.Equal(2, result.DetachedBlockCount);
+        Assert.Equal(3, result.ObservedBlockCount);
+        Assert.Equal(IndexerTestData.Hash('c'), result.Checkpoint!.LastBlockHash);
+        Assert.Equal(2, result.Checkpoint.Revision);
+        var store = new SqliteChainObservationStore(database);
+        Assert.Equal(
+            IndexerTestData.Hash('a'),
+            (await store.GetCanonicalBlockAsync(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                101,
+                TestContext.Current.CancellationToken))!.Hash);
+
+        await using SqliteConnection connection = await database.OpenConnectionAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(6, await CountAsync(connection, "observed_blocks"));
+        Assert.Equal(2, await CountAsync(connection, "payment_recorded_observations"));
+        Assert.Equal(8, await CountAsync(connection, "block_canonicality_transitions"));
+
+        var extension = new FakeChainObservationRpc();
+        extension.Blocks[104] = IndexerTestData.RpcBlock(104, 'd', 'c');
+        ChainObservationResult extended = await CreateProcessor(database, extension).ScanThroughAsync(
+            104,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(ChainObservationDisposition.Applied, extended.Disposition);
+        Assert.Equal(3, extended.Checkpoint!.Revision);
+        Assert.Equal(IndexerTestData.Hash('d'), extended.Checkpoint.LastBlockHash);
+    }
+
+    [Fact]
+    public async Task ReorgBeyondConfiguredDepth_FailsWithoutChangingDurableState()
+    {
+        await using var temporary = new TemporaryIndexerDatabase();
+        IndexerDatabase database = IndexerTestData.CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        FakeChainObservationRpc original = CreateReadyRpc();
+        original.Blocks[102] = IndexerTestData.RpcBlock(102, '3', '2');
+        original.Blocks[103] = IndexerTestData.RpcBlock(103, '4', '3');
+        original.Logs = [];
+        await CreateProcessor(database, original).ScanThroughAsync(
+            103,
+            TestContext.Current.CancellationToken);
+
+        var deepFork = new FakeChainObservationRpc();
+        deepFork.Blocks[101] = IndexerTestData.RpcBlock(101, 'b', 'a');
+        deepFork.Blocks[102] = IndexerTestData.RpcBlock(102, 'c', 'b');
+        deepFork.Blocks[103] = IndexerTestData.RpcBlock(103, 'd', 'c');
+        deepFork.Blocks[104] = IndexerTestData.RpcBlock(104, 'e', 'd');
+        var processor = new ChainObservationProcessor(
+            new ChainObservationPolicy(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                100,
+                maxBatchSize: 10,
+                maxReorgDepth: 2),
+            deepFork,
+            new SqliteChainObservationStore(database),
+            new IndexerTestData.FixedTimeProvider(IndexerTestData.Now));
+
+        ChainObservationException exception = await Assert.ThrowsAsync<ChainObservationException>(
+            () => processor.ScanThroughAsync(104, TestContext.Current.CancellationToken));
+
+        Assert.Contains("common ancestor", exception.Message, StringComparison.OrdinalIgnoreCase);
+        ChainObservationCheckpoint checkpoint = (await new SqliteChainObservationStore(database)
+            .GetCheckpointAsync(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                TestContext.Current.CancellationToken))!;
+        Assert.Equal(103, checkpoint.LastBlockNumber);
+        Assert.Equal(IndexerTestData.Hash('4'), checkpoint.LastBlockHash);
+        Assert.Equal(1, checkpoint.Revision);
+        await using SqliteConnection connection = await database.OpenConnectionAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(4, await CountAsync(connection, "observed_blocks"));
+        Assert.Equal(4, await CountAsync(connection, "block_canonicality_transitions"));
+    }
+
+    [Fact]
+    public async Task ParentMismatchInsideNewRange_FailsInsteadOfGuessingAReorg()
+    {
+        await using var temporary = new TemporaryIndexerDatabase();
+        IndexerDatabase database = IndexerTestData.CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        await CreateProcessor(database, CreateReadyRpc()).ScanThroughAsync(
+            101,
+            TestContext.Current.CancellationToken);
+        var inconsistent = new FakeChainObservationRpc();
+        inconsistent.Blocks[102] = IndexerTestData.RpcBlock(102, '3', '2');
+        inconsistent.Blocks[103] = IndexerTestData.RpcBlock(103, '4', 'f');
+
+        ChainParentMismatchException exception = await Assert.ThrowsAsync<ChainParentMismatchException>(
+            () => CreateProcessor(database, inconsistent).ScanThroughAsync(
+                103,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(103, exception.BlockNumber);
+        Assert.Equal(0, inconsistent.LogCalls);
+        ChainObservationCheckpoint checkpoint = (await new SqliteChainObservationStore(database)
+            .GetCheckpointAsync(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                TestContext.Current.CancellationToken))!;
+        Assert.Equal(101, checkpoint.LastBlockNumber);
         Assert.Equal(1, checkpoint.Revision);
     }
 

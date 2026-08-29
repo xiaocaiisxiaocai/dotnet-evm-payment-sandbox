@@ -68,20 +68,28 @@ public sealed class ChainObservationProcessor
                 $"RPC reported chain ID {observedChainId}, expected {_policy.ChainId}.");
         }
 
-        IReadOnlyList<ObservedBlock> blocks = await ReadBlocksAsync(
-            fromBlockNumber,
-            throughBlockNumber,
-            previous,
-            cancellationToken);
+        IReadOnlyList<ObservedBlock> blocks;
+        try
+        {
+            blocks = await ReadBlocksAsync(
+                fromBlockNumber,
+                throughBlockNumber,
+                previous?.LastBlockHash,
+                cancellationToken);
+        }
+        catch (ChainParentMismatchException exception) when (
+            previous is not null && exception.BlockNumber == fromBlockNumber)
+        {
+            return await RecoverFromReorganizationAsync(
+                previous,
+                throughBlockNumber,
+                cancellationToken);
+        }
         IReadOnlyList<RpcPaymentRecordedLog> rawLogs = await ObserveLogsAsync(
             fromBlockNumber,
             throughBlockNumber,
             cancellationToken);
-        if (rawLogs.Count > _policy.MaxLogsPerBatch)
-        {
-            throw new ChainObservationException(
-                $"RPC returned {rawLogs.Count} logs; the configured maximum is {_policy.MaxLogsPerBatch}.");
-        }
+        EnsureLogLimit(rawLogs);
 
         IReadOnlyList<PaymentRecordedObservation> payments = DecodeLogs(rawLogs, blocks);
         DateTimeOffset observedAtUtc = _timeProvider.GetUtcNow();
@@ -102,6 +110,99 @@ public sealed class ChainObservationProcessor
             committed.Checkpoint,
             blocks.Count,
             payments.Count);
+    }
+
+    private async Task<ChainObservationResult> RecoverFromReorganizationAsync(
+        ChainObservationCheckpoint previous,
+        long throughBlockNumber,
+        CancellationToken cancellationToken)
+    {
+        ObservedBlock commonAncestor = await FindCommonAncestorAsync(previous, cancellationToken);
+        long replacementStart = checked(commonAncestor.Number + 1);
+
+        // Forward work and detached history have independent limits. Their sum
+        // is therefore the largest replacement range recovery may ever read.
+        long replacementCount = checked(throughBlockNumber - commonAncestor.Number);
+        long maximumRecoveryCount = checked((long)_policy.MaxBatchSize + _policy.MaxReorgDepth);
+        if (replacementCount > maximumRecoveryCount)
+        {
+            throw new ChainObservationException(
+                $"The replacement range contains {replacementCount} blocks; " +
+                $"the bounded recovery maximum is {maximumRecoveryCount}.");
+        }
+
+        IReadOnlyList<ObservedBlock> blocks = await ReadBlocksAsync(
+            replacementStart,
+            throughBlockNumber,
+            commonAncestor.Hash,
+            cancellationToken);
+        IReadOnlyList<RpcPaymentRecordedLog> rawLogs = await ObserveLogsAsync(
+            replacementStart,
+            throughBlockNumber,
+            cancellationToken);
+        EnsureLogLimit(rawLogs);
+        IReadOnlyList<PaymentRecordedObservation> payments = DecodeLogs(rawLogs, blocks);
+        DateTimeOffset observedAtUtc = _timeProvider.GetUtcNow();
+        var replacement = new ChainObservationBatch(
+            _policy.ChainId,
+            _policy.Router,
+            _policy.StartBlockNumber,
+            blocks,
+            payments,
+            observedAtUtc);
+
+        ObservationCommitResult committed = await _store.CommitReorganizationAsync(
+            previous,
+            commonAncestor,
+            replacement,
+            cancellationToken);
+        return new ChainObservationResult(
+            ChainObservationResult.FromStore(committed.Disposition),
+            committed.Checkpoint,
+            blocks.Count,
+            payments.Count,
+            DetachedBlockCount: checked((int)(previous.LastBlockNumber - commonAncestor.Number)));
+    }
+
+    private async Task<ObservedBlock> FindCommonAncestorAsync(
+        ChainObservationCheckpoint previous,
+        CancellationToken cancellationToken)
+    {
+        for (int depth = 0; depth <= _policy.MaxReorgDepth; depth++)
+        {
+            long blockNumber = checked(previous.LastBlockNumber - depth);
+            if (blockNumber < previous.StartBlockNumber)
+            {
+                break;
+            }
+
+            ObservedBlock? stored = await _store.GetCanonicalBlockAsync(
+                _policy.ChainId,
+                _policy.Router,
+                blockNumber,
+                cancellationToken);
+            if (stored is null)
+            {
+                throw new ChainObservationException(
+                    $"The durable canonical block at height {blockNumber} is missing.");
+            }
+
+            ObservedBlock observed = await ReadBlockAsync(blockNumber, cancellationToken);
+            if (observed == stored)
+            {
+                return stored;
+            }
+
+            // The configured first block has no earlier durable observation
+            // with which this component could prove a common ancestor.
+            if (blockNumber == previous.StartBlockNumber)
+            {
+                break;
+            }
+        }
+
+        throw new ChainObservationException(
+            $"No common ancestor was found within the configured {_policy.MaxReorgDepth}-block reorg limit.");
     }
 
     private void ValidateStoredCheckpoint(ChainObservationCheckpoint? checkpoint)
@@ -164,56 +265,21 @@ public sealed class ChainObservationProcessor
     private async Task<IReadOnlyList<ObservedBlock>> ReadBlocksAsync(
         long fromBlockNumber,
         long throughBlockNumber,
-        ChainObservationCheckpoint? previous,
+        EvmHash? expectedParent,
         CancellationToken cancellationToken)
     {
         var blocks = new List<ObservedBlock>();
-        EvmHash? expectedParent = previous?.LastBlockHash;
 
         for (long number = fromBlockNumber; ; number = checked(number + 1))
         {
-            RpcBlockHeader? observed;
-            try
-            {
-                observed = await _rpc.GetBlockAsync(number, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                throw new ChainObservationException(
-                    $"The RPC block observation failed for block {number}.",
-                    exception);
-            }
-
-            RpcBlockHeader raw = observed
-                ?? throw new ChainObservationException($"RPC returned no block {number}.");
-            if (raw.Number != number)
-            {
-                throw new ChainObservationException(
-                    $"RPC returned block number {raw.Number} for requested block {number}.");
-            }
-
-            ObservedBlock block;
-            try
-            {
-                block = new ObservedBlock(
-                    number,
-                    EvmHash.Parse(raw.Hash ?? string.Empty),
-                    EvmHash.Parse(raw.ParentHash ?? string.Empty));
-            }
-            catch (FormatException exception)
-            {
-                throw new ChainObservationException(
-                    $"RPC returned a malformed hash for block {number}: {exception.Message}");
-            }
+            ObservedBlock block = await ReadBlockAsync(number, cancellationToken);
 
             if (expectedParent is not null && block.ParentHash != expectedParent)
             {
-                throw new ChainObservationException(
-                    $"Block {number} parent {block.ParentHash} does not extend {expectedParent}.");
+                throw new ChainParentMismatchException(
+                    number,
+                    expectedParent,
+                    block.ParentHash);
             }
 
             blocks.Add(block);
@@ -225,6 +291,57 @@ public sealed class ChainObservationProcessor
         }
 
         return blocks;
+    }
+
+    private async Task<ObservedBlock> ReadBlockAsync(
+        long blockNumber,
+        CancellationToken cancellationToken)
+    {
+        RpcBlockHeader? observed;
+        try
+        {
+            observed = await _rpc.GetBlockAsync(blockNumber, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new ChainObservationException(
+                $"The RPC block observation failed for block {blockNumber}.",
+                exception);
+        }
+
+        RpcBlockHeader raw = observed
+            ?? throw new ChainObservationException($"RPC returned no block {blockNumber}.");
+        if (raw.Number != blockNumber)
+        {
+            throw new ChainObservationException(
+                $"RPC returned block number {raw.Number} for requested block {blockNumber}.");
+        }
+
+        try
+        {
+            return new ObservedBlock(
+                blockNumber,
+                EvmHash.Parse(raw.Hash ?? string.Empty),
+                EvmHash.Parse(raw.ParentHash ?? string.Empty));
+        }
+        catch (FormatException exception)
+        {
+            throw new ChainObservationException(
+                $"RPC returned a malformed hash for block {blockNumber}: {exception.Message}");
+        }
+    }
+
+    private void EnsureLogLimit(IReadOnlyList<RpcPaymentRecordedLog> rawLogs)
+    {
+        if (rawLogs.Count > _policy.MaxLogsPerBatch)
+        {
+            throw new ChainObservationException(
+                $"RPC returned {rawLogs.Count} logs; the configured maximum is {_policy.MaxLogsPerBatch}.");
+        }
     }
 
     private IReadOnlyList<PaymentRecordedObservation> DecodeLogs(

@@ -42,6 +42,8 @@ public sealed class ChainValueTests
             new ChainObservationPolicy(new EvmChainId(1), router, 0, 10_001));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new ChainObservationPolicy(new EvmChainId(1), router, 0, maxLogsPerBatch: 100_001));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ChainObservationPolicy(new EvmChainId(1), router, 0, maxReorgDepth: 10_001));
     }
 
     [Theory]

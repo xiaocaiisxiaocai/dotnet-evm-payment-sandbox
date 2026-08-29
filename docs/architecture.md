@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 8, including the accepted Gate A baseline; and
+1. the implementation through Week 9, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 8
+## Implemented architecture through Week 9
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,7 @@ flowchart LR
     Domain --> Indexer[PaymentSandbox.Indexer]
     Contracts --> Indexer
     RPC -. exact chainId, blocks,<br/>and Router logs .-> Indexer
-    Indexer --> ObservationDb[(SQLite observations<br/>and checkpoint)]
+    Indexer --> ObservationDb[(SQLite observations,<br/>canonicality history,<br/>and checkpoint)]
     Indexer --> IndexerTests[Fake RPC + loopback JSON-RPC<br/>+ SQLite tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
@@ -54,6 +54,11 @@ that references Domain and the reviewed Contracts event DTO. `PaymentSandbox.Con
 chain-ID/code identity observations plus local unsigned calldata encoding. CI
 uses isolated temporary databases and a loopback raw JSON-RPC fixture; it needs
 no external RPC, database service, wallet, or credential.
+
+Week 9 extends that library without turning it into a hosted worker. A bounded
+common-ancestor search compares exact RPC headers with the locally selected
+chain. SQLite retains both fork occurrences and records canonicality changes as
+append-only transitions before atomically switching the checkpoint.
 
 ### Build and dependency boundary
 
@@ -115,7 +120,7 @@ expiry, capacity control, or production hosting configuration.
 
 `PaymentSandbox.Indexer` is an independently testable class library, not a
 hosted worker. Its policy fixes one chain ID, Router address, start block, maximum
-range, and maximum log count. A caller must select an exact inclusive target;
+range, maximum log count, and maximum reorg depth. A caller must select an exact inclusive target;
 the public RPC interface exposes chain ID, a block by number, and reviewed Router
 logs for a bounded range. It contains no account, signing, broadcast, receipt
 polling, balance mutation, or implicit moving-head loop.
@@ -136,12 +141,27 @@ or verifies all source rows and advances a revisioned `(chainId, router)`
 checkpoint. Same-range concurrency or a lost commit response becomes a verified
 replay; a different cursor becomes a conflict.
 
-The checkpoint is only a durable scan cursor. Parent mismatch currently stops
-processing but does not find a common ancestor, classify canonical rows, reverse
-business effects, or define confirmations/finality. No observation changes a
-Payment Intent or ledger. One endpoint may lie or omit logs, Router runtime
-identity is not yet anchored at a trusted block, and the local database has no
-backup, encryption, tamper evidence, retention, or cross-host coordination.
+At a new-range boundary parent mismatch, the processor searches backward no more
+than the configured reorg depth. It compares the RPC and stored exact block
+identities at each height. Once a common ancestor is proven, it re-reads a
+complete parent-linked replacement suffix and its exact logs. A mismatch inside
+that fresh suffix is treated as inconsistent RPC data and fails instead of
+starting another recovery attempt.
+
+Migration 2 adds `block_canonicality_transitions`. Normal batches append
+`canonical/observed`; a reorg transaction appends `noncanonical/reorg_detached`
+for the old suffix and `canonical/reorg_replacement` for the new suffix. It never
+deletes old blocks or events. The current block at a height is derived from each
+occurrence's latest transition. Source rows, transitions, and the revision-guarded
+checkpoint switch commit together. Same-reorg concurrency or a lost response is
+accepted only after the replacement rows and exact detach/attach history verify.
+
+The checkpoint remains only a durable scan cursor, and `canonical` means this
+local observer's current branch selection. It does not define confirmations,
+finality, reversal effects, or credit. No observation changes a Payment Intent or
+ledger. One endpoint may lie or omit logs, Router runtime identity is not yet
+anchored at a trusted block, and the local database has no backup, encryption,
+tamper evidence, retention, or cross-host coordination.
 
 ### Contract boundary
 
@@ -209,7 +229,7 @@ Most of these remain roadmap invariants. The current code establishes exact
 value types, a narrow non-custodial contract boundary, executable contract
 failure cases, a bounded .NET identity gate, durable local business idempotency,
 and append-only chain observations with a restart cursor. It does not implement
-canonicality recovery, finality, ledger effects, or off-chain settlement.
+confirmation/finality, ledger effects, or off-chain settlement.
 
 ## Trust boundaries
 
@@ -224,10 +244,10 @@ Current and future code must treat the following as untrusted input:
 
 CI intentionally needs no external RPC endpoint or signing secret. Week 5
 identity tests use an in-memory fake, Week 7 API tests use real Kestrel listeners
-and isolated temporary SQLite files, and Week 8 combines fake-RPC failure tests
+and isolated temporary SQLite files, and Weeks 8-9 combine fake-RPC/fork tests
 with a loopback raw JSON-RPC/ABI fixture and real temporary SQLite files. These
 exercise protocol mapping, migration, restart, constraints, exact retry,
-concurrent scanners, range limits, and fork-stop behavior; see [Threat
+concurrent scanners, range/reorg limits, fork retention, and atomic branch switching; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary

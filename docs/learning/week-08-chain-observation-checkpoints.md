@@ -226,3 +226,7 @@ no backup, tamper evidence, retention policy, or cross-host coordination.
 Week 9 can build common-ancestor detection and explicit fork handling on these
 preserved observations. It must keep canonicality/finality policy separate from
 the fact that an endpoint once returned a block or log.
+
+That follow-up is now implemented and documented in
+[`week-09-reorg-canonicality.md`](week-09-reorg-canonicality.md). This Week 8
+section intentionally retains the boundary that was true at its own milestone.

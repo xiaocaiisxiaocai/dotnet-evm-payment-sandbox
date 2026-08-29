@@ -1,7 +1,7 @@
 namespace PaymentSandbox.Indexer.Processing;
 
 /// <summary>Raised when untrusted RPC data cannot satisfy batch invariants.</summary>
-public sealed class ChainObservationException : InvalidOperationException
+public class ChainObservationException : InvalidOperationException
 {
     public ChainObservationException(string message)
         : base(message)

@@ -23,7 +23,8 @@ public sealed class SqliteChainObservationStoreTests
             """
             SELECT m.version, m.name, s.sql
             FROM schema_migrations AS m
-            JOIN sqlite_schema AS s ON s.name = 'payment_recorded_observations';
+            JOIN sqlite_schema AS s ON s.name = 'payment_recorded_observations'
+            WHERE m.version = 1;
             """;
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(
             TestContext.Current.CancellationToken);
@@ -33,6 +34,11 @@ public sealed class SqliteChainObservationStoreTests
         Assert.Equal("create_chain_observations", reader.GetString(1));
         Assert.Contains("STRICT", reader.GetString(2), StringComparison.OrdinalIgnoreCase);
         Assert.False(await reader.ReadAsync(TestContext.Current.CancellationToken));
+
+        await reader.DisposeAsync();
+        command.CommandText = "SELECT COUNT(*) FROM schema_migrations;";
+        Assert.Equal(2, (long)(await command.ExecuteScalarAsync(
+            TestContext.Current.CancellationToken))!);
     }
 
     [Fact]
@@ -49,9 +55,49 @@ public sealed class SqliteChainObservationStoreTests
         await using SqliteConnection connection = await first.OpenConnectionAsync(
             TestContext.Current.CancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version = 1;";
-        Assert.Equal(1, (long)(await command.ExecuteScalarAsync(
+        command.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version IN (1, 2);";
+        Assert.Equal(2, (long)(await command.ExecuteScalarAsync(
             TestContext.Current.CancellationToken))!);
+    }
+
+    [Fact]
+    public async Task VersionTwoUpgrade_BackfillsExistingWeekEightBlocksAsCanonical()
+    {
+        await using var temporary = new TemporaryIndexerDatabase();
+        IndexerDatabase database = IndexerTestData.CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        var store = new SqliteChainObservationStore(database);
+        await store.CommitBatchAsync(
+            null,
+            IndexerTestData.Batch(),
+            TestContext.Current.CancellationToken);
+
+        // Recreate the state of a real Week 8 database: observations and its
+        // checkpoint exist, but migration 2 and transition history do not.
+        await using (SqliteConnection connection = await database.OpenConnectionAsync(
+            TestContext.Current.CancellationToken))
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                """
+                DROP TABLE block_canonicality_transitions;
+                DELETE FROM schema_migrations WHERE version = 2;
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            IndexerTestData.Hash('1'),
+            (await store.GetCanonicalBlockAsync(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                100,
+                TestContext.Current.CancellationToken))!.Hash);
+        await using SqliteConnection upgraded = await database.OpenConnectionAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(2, await CountAsync(upgraded, "block_canonicality_transitions"));
     }
 
     [Fact]
@@ -160,6 +206,100 @@ public sealed class SqliteChainObservationStoreTests
             IndexerTestData.Router,
             TestContext.Current.CancellationToken);
         Assert.Equal(IndexerTestData.Hash('2'), checkpoint!.LastBlockHash);
+    }
+
+    [Fact]
+    public async Task ConcurrentSameReorganization_AppliesOnceAndRetainsBothForks()
+    {
+        await using var temporary = new TemporaryIndexerDatabase();
+        IndexerDatabase database = IndexerTestData.CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        var seedStore = new SqliteChainObservationStore(database);
+        ObservationCommitResult initial = await seedStore.CommitBatchAsync(
+            null,
+            IndexerTestData.Batch(),
+            TestContext.Current.CancellationToken);
+        var ancestor = new ObservedBlock(100, IndexerTestData.Hash('1'), IndexerTestData.Hash('0'));
+        var replacement = new ChainObservationBatch(
+            IndexerTestData.ChainId,
+            IndexerTestData.Router,
+            100,
+            [
+                new ObservedBlock(101, IndexerTestData.Hash('e'), IndexerTestData.Hash('1')),
+                new ObservedBlock(102, IndexerTestData.Hash('f'), IndexerTestData.Hash('e')),
+            ],
+            [],
+            IndexerTestData.Now.AddMinutes(1));
+        var first = new SqliteChainObservationStore(database);
+        var second = new SqliteChainObservationStore(database);
+
+        ObservationCommitResult[] results = await Task.WhenAll(
+            first.CommitReorganizationAsync(
+                initial.Checkpoint,
+                ancestor,
+                replacement,
+                TestContext.Current.CancellationToken).AsTask(),
+            second.CommitReorganizationAsync(
+                initial.Checkpoint,
+                ancestor,
+                replacement,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(1, results.Count(result =>
+            result.Disposition == ObservationCommitDisposition.Reorganized));
+        Assert.Equal(1, results.Count(result =>
+            result.Disposition == ObservationCommitDisposition.Replayed));
+        Assert.All(results, result => Assert.Equal(2, result.Checkpoint.Revision));
+        Assert.Equal(
+            IndexerTestData.Hash('e'),
+            (await seedStore.GetCanonicalBlockAsync(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                101,
+                TestContext.Current.CancellationToken))!.Hash);
+
+        await using SqliteConnection connection = await database.OpenConnectionAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(4, await CountAsync(connection, "observed_blocks"));
+        Assert.Equal(1, await CountAsync(connection, "payment_recorded_observations"));
+        Assert.Equal(5, await CountAsync(connection, "block_canonicality_transitions"));
+    }
+
+    [Fact]
+    public async Task ReorganizationWithNonHighestAncestor_IsRejectedWithoutTransitions()
+    {
+        await using var temporary = new TemporaryIndexerDatabase();
+        IndexerDatabase database = IndexerTestData.CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        var store = new SqliteChainObservationStore(database);
+        ObservationCommitResult initial = await store.CommitBatchAsync(
+            null,
+            IndexerTestData.Batch(),
+            TestContext.Current.CancellationToken);
+        var ancestor = new ObservedBlock(100, IndexerTestData.Hash('1'), IndexerTestData.Hash('0'));
+        var unchangedSuffix = new ChainObservationBatch(
+            IndexerTestData.ChainId,
+            IndexerTestData.Router,
+            100,
+            [new ObservedBlock(101, IndexerTestData.Hash('2'), IndexerTestData.Hash('1'))],
+            [],
+            IndexerTestData.Now.AddMinutes(1));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CommitReorganizationAsync(
+            initial.Checkpoint,
+            ancestor,
+            unchangedSuffix,
+            TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(
+            initial.Checkpoint,
+            await store.GetCheckpointAsync(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                TestContext.Current.CancellationToken));
+        await using SqliteConnection connection = await database.OpenConnectionAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(2, await CountAsync(connection, "block_canonicality_transitions"));
     }
 
     [Fact]

@@ -167,6 +167,69 @@ internal static class IndexerDatabaseMigrations
                     chain_id, router_address, payment_id, block_number
                 );
             """),
+        new(
+            Version: 2,
+            Name: "add_block_canonicality_transitions",
+            Sql:
+            """
+            CREATE TABLE block_canonicality_transitions (
+                transition_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                chain_id TEXT NOT NULL,
+                router_address TEXT NOT NULL,
+                block_number INTEGER NOT NULL CHECK (block_number >= 0),
+                block_hash TEXT NOT NULL,
+                checkpoint_revision INTEGER NOT NULL CHECK (checkpoint_revision > 0),
+                canonicality TEXT NOT NULL CHECK (canonicality IN ('canonical', 'noncanonical')),
+                reason TEXT NOT NULL CHECK (
+                    reason IN ('observed', 'reorg_detached', 'reorg_replacement', 'week9_backfill')
+                ),
+                changed_at_utc TEXT NOT NULL,
+                UNIQUE (
+                    chain_id, router_address, block_number, block_hash,
+                    checkpoint_revision, canonicality
+                ),
+                FOREIGN KEY (chain_id, router_address, block_number, block_hash)
+                    REFERENCES observed_blocks (
+                        chain_id, router_address, block_number, block_hash
+                    ) ON DELETE RESTRICT,
+                CHECK (
+                    length(chain_id) > 0
+                    AND chain_id NOT GLOB '*[^0-9]*'
+                    AND chain_id <> '0'
+                    AND substr(chain_id, 1, 1) <> '0'
+                ),
+                CHECK (
+                    length(router_address) = 42
+                    AND substr(router_address, 1, 2) = '0x'
+                    AND router_address = lower(router_address)
+                    AND substr(router_address, 3) NOT GLOB '*[^0-9a-f]*'
+                ),
+                CHECK (
+                    length(block_hash) = 66
+                    AND substr(block_hash, 1, 2) = '0x'
+                    AND block_hash = lower(block_hash)
+                    AND substr(block_hash, 3) NOT GLOB '*[^0-9a-f]*'
+                )
+            ) STRICT;
+
+            CREATE INDEX ix_block_canonicality_stream_height
+                ON block_canonicality_transitions (
+                    chain_id, router_address, block_number, transition_id DESC
+                );
+
+            -- The Week 8 API only appended one active chain, so all existing
+            -- observations can be seeded as canonical during this upgrade.
+            INSERT INTO block_canonicality_transitions (
+                chain_id, router_address, block_number, block_hash,
+                checkpoint_revision, canonicality, reason, changed_at_utc)
+            SELECT
+                b.chain_id, b.router_address, b.block_number, b.block_hash,
+                c.revision, 'canonical', 'week9_backfill', c.updated_at_utc
+            FROM observed_blocks AS b
+            JOIN indexer_checkpoints AS c
+              ON c.chain_id = b.chain_id
+             AND c.router_address = b.router_address;
+            """),
     ];
 }
 

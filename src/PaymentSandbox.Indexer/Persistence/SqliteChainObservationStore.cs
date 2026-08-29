@@ -25,6 +25,26 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
         return await ReadCheckpointAsync(connection, null, chainId, router, cancellationToken);
     }
 
+    public async ValueTask<ObservedBlock?> GetCanonicalBlockAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        long blockNumber,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chainId);
+        ArgumentNullException.ThrowIfNull(router);
+        ArgumentOutOfRangeException.ThrowIfNegative(blockNumber);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        return await ReadCanonicalBlockAsync(
+            connection,
+            null,
+            chainId,
+            router,
+            blockNumber,
+            cancellationToken);
+    }
+
     public async ValueTask<ObservationCommitResult> CommitBatchAsync(
         ChainObservationCheckpoint? expectedPrevious,
         ChainObservationBatch batch,
@@ -60,6 +80,19 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
             if (current is not null && RepresentsSamePosition(current, next))
             {
                 await VerifyBatchRowsAsync(connection, transaction, batch, cancellationToken);
+                foreach (ObservedBlock block in batch.Blocks)
+                {
+                    await VerifyCanonicalityTransitionAsync(
+                        connection,
+                        transaction,
+                        batch.ChainId,
+                        batch.Router,
+                        block,
+                        next.Revision,
+                        "canonical",
+                        "observed",
+                        cancellationToken);
+                }
                 await transaction.CommitAsync(cancellationToken);
                 return new ObservationCommitResult(ObservationCommitDisposition.Replayed, current);
             }
@@ -84,6 +117,22 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
                 cancellationToken);
         }
 
+
+        foreach (ObservedBlock block in batch.Blocks)
+        {
+            await InsertOrVerifyCanonicalityTransitionAsync(
+                connection,
+                transaction,
+                batch.ChainId,
+                batch.Router,
+                block,
+                next.Revision,
+                "canonical",
+                "observed",
+                batch.ObservedAtUtc,
+                cancellationToken);
+        }
+
         await WriteCheckpointAsync(
             connection,
             transaction,
@@ -92,6 +141,144 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new ObservationCommitResult(ObservationCommitDisposition.Applied, next);
+    }
+
+    public async ValueTask<ObservationCommitResult> CommitReorganizationAsync(
+        ChainObservationCheckpoint expectedPrevious,
+        ObservedBlock commonAncestor,
+        ChainObservationBatch replacement,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPrevious);
+        ArgumentNullException.ThrowIfNull(commonAncestor);
+        ArgumentNullException.ThrowIfNull(replacement);
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateReorganization(expectedPrevious, commonAncestor, replacement);
+
+        var next = new ChainObservationCheckpoint(
+            replacement.ChainId,
+            replacement.Router,
+            replacement.StartBlockNumber,
+            replacement.LastBlock.Number,
+            replacement.LastBlock.Hash,
+            checked(expectedPrevious.Revision + 1),
+            replacement.ObservedAtUtc);
+
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteTransaction transaction = (SqliteTransaction)await connection
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        ChainObservationCheckpoint? current = await ReadCheckpointAsync(
+            connection,
+            transaction,
+            replacement.ChainId,
+            replacement.Router,
+            cancellationToken);
+
+        if (current != expectedPrevious)
+        {
+            if (current is not null && RepresentsSamePosition(current, next))
+            {
+                await VerifyCanonicalAncestorAsync(
+                    connection,
+                    transaction,
+                    replacement.ChainId,
+                    replacement.Router,
+                    commonAncestor,
+                    cancellationToken);
+                await VerifyBatchRowsAsync(connection, transaction, replacement, cancellationToken);
+                await VerifyReorganizationTransitionsAsync(
+                    connection,
+                    transaction,
+                    expectedPrevious,
+                    commonAncestor,
+                    replacement,
+                    next.Revision,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new ObservationCommitResult(ObservationCommitDisposition.Replayed, current);
+            }
+
+            throw new CheckpointConflictException(
+                "The durable checkpoint changed before this reorganization could commit.");
+        }
+
+        await VerifyCanonicalAncestorAsync(
+            connection,
+            transaction,
+            replacement.ChainId,
+            replacement.Router,
+            commonAncestor,
+            cancellationToken);
+
+        IReadOnlyList<ObservedBlock> detached = await ReadCanonicalRangeAsync(
+            connection,
+            transaction,
+            replacement.ChainId,
+            replacement.Router,
+            checked(commonAncestor.Number + 1),
+            expectedPrevious.LastBlockNumber,
+            cancellationToken);
+        ValidateDetachedSuffix(expectedPrevious, commonAncestor, detached);
+        if (detached[0] == replacement.Blocks[0])
+        {
+            throw new ArgumentException(
+                "The selected ancestor is not the highest common block.",
+                nameof(commonAncestor));
+        }
+
+        foreach (ObservedBlock block in replacement.Blocks)
+        {
+            await InsertOrVerifyBlockAsync(connection, transaction, replacement, block, cancellationToken);
+        }
+
+        foreach (PaymentRecordedObservation payment in replacement.Payments)
+        {
+            await InsertOrVerifyPaymentAsync(
+                connection,
+                transaction,
+                replacement.ObservedAtUtc,
+                payment,
+                cancellationToken);
+        }
+
+        foreach (ObservedBlock block in detached)
+        {
+            await InsertOrVerifyCanonicalityTransitionAsync(
+                connection,
+                transaction,
+                replacement.ChainId,
+                replacement.Router,
+                block,
+                next.Revision,
+                "noncanonical",
+                "reorg_detached",
+                replacement.ObservedAtUtc,
+                cancellationToken);
+        }
+
+        foreach (ObservedBlock block in replacement.Blocks)
+        {
+            await InsertOrVerifyCanonicalityTransitionAsync(
+                connection,
+                transaction,
+                replacement.ChainId,
+                replacement.Router,
+                block,
+                next.Revision,
+                "canonical",
+                "reorg_replacement",
+                replacement.ObservedAtUtc,
+                cancellationToken);
+        }
+
+        await WriteCheckpointAsync(
+            connection,
+            transaction,
+            expectedPrevious,
+            next,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new ObservationCommitResult(ObservationCommitDisposition.Reorganized, next);
     }
 
     private static void ValidateBatch(
@@ -167,6 +354,72 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
         }
     }
 
+    private static void ValidateReorganization(
+        ChainObservationCheckpoint previous,
+        ObservedBlock commonAncestor,
+        ChainObservationBatch replacement)
+    {
+        if (previous.ChainId != replacement.ChainId ||
+            previous.Router != replacement.Router ||
+            previous.StartBlockNumber != replacement.StartBlockNumber)
+        {
+            throw new ArgumentException(
+                "The previous checkpoint belongs to a different observation stream.",
+                nameof(previous));
+        }
+
+        if (commonAncestor.Number < previous.StartBlockNumber ||
+            commonAncestor.Number >= previous.LastBlockNumber)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(commonAncestor),
+                "The common ancestor must be inside the stored range and precede its tip.");
+        }
+
+        var ancestorCheckpoint = new ChainObservationCheckpoint(
+            previous.ChainId,
+            previous.Router,
+            previous.StartBlockNumber,
+            commonAncestor.Number,
+            commonAncestor.Hash,
+            previous.Revision,
+            previous.UpdatedAtUtc);
+        ValidateBatch(ancestorCheckpoint, replacement);
+    }
+
+    private static void ValidateDetachedSuffix(
+        ChainObservationCheckpoint previous,
+        ObservedBlock commonAncestor,
+        IReadOnlyList<ObservedBlock> detached)
+    {
+        long expectedCount = checked(previous.LastBlockNumber - commonAncestor.Number);
+        if (detached.Count != expectedCount)
+        {
+            throw new InvalidOperationException(
+                "The durable canonical suffix is incomplete; the reorganization was not applied.");
+        }
+
+        EvmHash expectedParent = commonAncestor.Hash;
+        for (int index = 0; index < detached.Count; index++)
+        {
+            ObservedBlock block = detached[index];
+            long expectedNumber = checked(commonAncestor.Number + index + 1L);
+            if (block.Number != expectedNumber || block.ParentHash != expectedParent)
+            {
+                throw new InvalidOperationException(
+                    "The durable canonical suffix is not one complete parent-linked chain.");
+            }
+
+            expectedParent = block.Hash;
+        }
+
+        if (detached[^1].Hash != previous.LastBlockHash)
+        {
+            throw new InvalidOperationException(
+                "The durable canonical suffix does not terminate at the checkpoint hash.");
+        }
+    }
+
     private static bool RepresentsSamePosition(
         ChainObservationCheckpoint current,
         ChainObservationCheckpoint expected) =>
@@ -209,6 +462,114 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
             EvmHash.Parse(reader.GetString(2)),
             reader.GetInt64(3),
             ParseTimestamp(reader.GetString(4)));
+    }
+
+    private static async Task<ObservedBlock?> ReadCanonicalBlockAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        EvmChainId chainId,
+        EvmAddress router,
+        long blockNumber,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT b.block_hash, b.parent_hash
+            FROM observed_blocks AS b
+            JOIN block_canonicality_transitions AS t
+              ON t.chain_id = b.chain_id
+             AND t.router_address = b.router_address
+             AND t.block_number = b.block_number
+             AND t.block_hash = b.block_hash
+            WHERE b.chain_id = $chainId
+              AND b.router_address = $routerAddress
+              AND b.block_number = $blockNumber
+              AND t.transition_id = (
+                  SELECT MAX(t2.transition_id)
+                  FROM block_canonicality_transitions AS t2
+                  WHERE t2.chain_id = t.chain_id
+                    AND t2.router_address = t.router_address
+                    AND t2.block_number = t.block_number
+                    AND t2.block_hash = t.block_hash
+              )
+              AND t.canonicality = 'canonical';
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$blockNumber", blockNumber);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var result = new ObservedBlock(
+            blockNumber,
+            EvmHash.Parse(reader.GetString(0)),
+            EvmHash.Parse(reader.GetString(1)));
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"More than one block is currently canonical at height {blockNumber}.");
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<ObservedBlock>> ReadCanonicalRangeAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EvmChainId chainId,
+        EvmAddress router,
+        long fromBlockNumber,
+        long throughBlockNumber,
+        CancellationToken cancellationToken)
+    {
+        var blocks = new List<ObservedBlock>();
+        for (long number = fromBlockNumber; ; number = checked(number + 1))
+        {
+            ObservedBlock? block = await ReadCanonicalBlockAsync(
+                connection,
+                transaction,
+                chainId,
+                router,
+                number,
+                cancellationToken);
+            if (block is not null)
+            {
+                blocks.Add(block);
+            }
+
+            if (number == throughBlockNumber)
+            {
+                break;
+            }
+        }
+
+        return blocks;
+    }
+
+    private static async Task VerifyCanonicalAncestorAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EvmChainId chainId,
+        EvmAddress router,
+        ObservedBlock commonAncestor,
+        CancellationToken cancellationToken)
+    {
+        ObservedBlock? durableAncestor = await ReadCanonicalBlockAsync(
+            connection,
+            transaction,
+            chainId,
+            router,
+            commonAncestor.Number,
+            cancellationToken);
+        if (durableAncestor != commonAncestor)
+        {
+            throw new CheckpointConflictException(
+                "The selected common ancestor is no longer canonical.");
+        }
     }
 
     private static async Task InsertOrVerifyBlockAsync(
@@ -270,6 +631,91 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
         {
             await VerifyPaymentRowAsync(connection, transaction, payment, cancellationToken);
+        }
+    }
+
+    private static async Task InsertOrVerifyCanonicalityTransitionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EvmChainId chainId,
+        EvmAddress router,
+        ObservedBlock block,
+        long checkpointRevision,
+        string canonicality,
+        string reason,
+        DateTimeOffset changedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO block_canonicality_transitions (
+                chain_id, router_address, block_number, block_hash,
+                checkpoint_revision, canonicality, reason, changed_at_utc)
+            VALUES (
+                $chainId, $routerAddress, $blockNumber, $blockHash,
+                $checkpointRevision, $canonicality, $reason, $changedAtUtc)
+            ON CONFLICT(
+                chain_id, router_address, block_number, block_hash,
+                checkpoint_revision, canonicality
+            ) DO NOTHING;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$blockNumber", block.Number);
+        command.Parameters.AddWithValue("$blockHash", block.Hash.Value);
+        command.Parameters.AddWithValue("$checkpointRevision", checkpointRevision);
+        command.Parameters.AddWithValue("$canonicality", canonicality);
+        command.Parameters.AddWithValue("$reason", reason);
+        command.Parameters.AddWithValue("$changedAtUtc", FormatTimestamp(changedAtUtc));
+        if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+        {
+            await VerifyCanonicalityTransitionAsync(
+                connection,
+                transaction,
+                chainId,
+                router,
+                block,
+                checkpointRevision,
+                canonicality,
+                reason,
+                cancellationToken);
+        }
+    }
+
+    private static async Task VerifyCanonicalityTransitionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EvmChainId chainId,
+        EvmAddress router,
+        ObservedBlock block,
+        long checkpointRevision,
+        string canonicality,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT reason
+            FROM block_canonicality_transitions
+            WHERE chain_id = $chainId AND router_address = $routerAddress
+              AND block_number = $blockNumber AND block_hash = $blockHash
+              AND checkpoint_revision = $checkpointRevision
+              AND canonicality = $canonicality;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$blockNumber", block.Number);
+        command.Parameters.AddWithValue("$blockHash", block.Hash.Value);
+        command.Parameters.AddWithValue("$checkpointRevision", checkpointRevision);
+        command.Parameters.AddWithValue("$canonicality", canonicality);
+        string? storedReason = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        if (!string.Equals(storedReason, reason, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Stored canonicality transition for block {block.Number}/{block.Hash} " +
+                "does not match the replayed change.");
         }
     }
 
@@ -344,6 +790,93 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
         {
             await VerifyPaymentRowAsync(connection, transaction, payment, cancellationToken);
         }
+    }
+
+    private static async Task VerifyReorganizationTransitionsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ChainObservationCheckpoint previous,
+        ObservedBlock commonAncestor,
+        ChainObservationBatch replacement,
+        long checkpointRevision,
+        CancellationToken cancellationToken)
+    {
+        foreach (ObservedBlock block in replacement.Blocks)
+        {
+            await VerifyCanonicalityTransitionAsync(
+                connection,
+                transaction,
+                replacement.ChainId,
+                replacement.Router,
+                block,
+                checkpointRevision,
+                "canonical",
+                "reorg_replacement",
+                cancellationToken);
+        }
+
+        IReadOnlyList<ObservedBlock> detached = await ReadTransitionBlocksAsync(
+            connection,
+            transaction,
+            replacement.ChainId,
+            replacement.Router,
+            checkpointRevision,
+            "noncanonical",
+            "reorg_detached",
+            cancellationToken);
+        try
+        {
+            ValidateDetachedSuffix(previous, commonAncestor, detached);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new InvalidOperationException(
+                "Stored detach transitions do not match the replayed reorganization.",
+                exception);
+        }
+    }
+
+    private static async Task<IReadOnlyList<ObservedBlock>> ReadTransitionBlocksAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EvmChainId chainId,
+        EvmAddress router,
+        long checkpointRevision,
+        string canonicality,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT b.block_number, b.block_hash, b.parent_hash
+            FROM block_canonicality_transitions AS t
+            JOIN observed_blocks AS b
+              ON b.chain_id = t.chain_id
+             AND b.router_address = t.router_address
+             AND b.block_number = t.block_number
+             AND b.block_hash = t.block_hash
+            WHERE t.chain_id = $chainId AND t.router_address = $routerAddress
+              AND t.checkpoint_revision = $checkpointRevision
+              AND t.canonicality = $canonicality AND t.reason = $reason
+            ORDER BY b.block_number;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$checkpointRevision", checkpointRevision);
+        command.Parameters.AddWithValue("$canonicality", canonicality);
+        command.Parameters.AddWithValue("$reason", reason);
+        var blocks = new List<ObservedBlock>();
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            blocks.Add(new ObservedBlock(
+                reader.GetInt64(0),
+                EvmHash.Parse(reader.GetString(1)),
+                EvmHash.Parse(reader.GetString(2))));
+        }
+
+        return blocks;
     }
 
     private static async Task VerifyBlockRowAsync(
