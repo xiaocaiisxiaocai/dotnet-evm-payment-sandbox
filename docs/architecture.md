@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 5, including the accepted Gate A baseline; and
+1. the implementation through Week 6, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 5
+## Implemented architecture through Week 6
 
 ```mermaid
 flowchart LR
@@ -17,6 +17,10 @@ flowchart LR
     Packages[central package versions<br/>and lock files] --> Build
     Build --> Domain[PaymentSandbox.Domain]
     Domain --> DomainTests[Domain tests<br/>xUnit v3 + MTP]
+    Domain --> API[PaymentSandbox.Api]
+    Client[Loopback HTTP client] --> API
+    API --> Memory[(Process-local intent store)]
+    API --> APITests[Real Kestrel HTTP tests]
     Domain --> Contracts[PaymentSandbox.Contracts]
     ABI[Reviewed Router ABI] --> Contracts
     Baseline[Reviewed runtime Keccak] --> Contracts
@@ -36,7 +40,12 @@ flowchart LR
     CI --> SecretScan
 ```
 
-There is still no .NET runtime application. Week 5 adds a library adapter between reviewed contract artifacts and future application code, but no executable starts it and CI needs no external RPC or credential. `PaymentSandbox.Domain` remains unaware of Nethereum. `PaymentSandbox.Contracts` depends on Domain, projects the reviewed ABI into typed messages, and exposes only chain-ID/code identity observations plus local unsigned calldata encoding.
+Week 6 adds the first runnable .NET application, but keeps it independent from
+RPC and Contracts. `PaymentSandbox.Api` accepts and reads off-chain intents from
+a volatile in-memory store. `PaymentSandbox.Domain` remains unaware of ASP.NET
+Core and Nethereum. `PaymentSandbox.Contracts` still exposes only chain-ID/code
+identity observations plus local unsigned calldata encoding. CI needs no
+external RPC, database, wallet, or credential.
 
 ### Build and dependency boundary
 
@@ -56,6 +65,10 @@ The current values are:
 
 - `PaymentId`: a non-zero 32-byte public correlation ID with one canonical lowercase `0x` representation.
 - `RawTokenAmount`: an exact integer constrained to the EVM `uint256` range.
+- `EvmChainId`: a positive chain identifier constrained to `uint256` and rendered as exact decimal text.
+- `EvmAddress`: a syntactically valid 20-byte address with one lowercase representation.
+- `PaymentIntentTerms`: immutable chain, token, merchant, and positive raw amount facts.
+- `PaymentIntent`: a process-created off-chain resource whose only current state is `Created`.
 
 These types defend facts that every later adapter must preserve. They do not decide whether a payment is final, credited, authorized, or compliant.
 
@@ -66,6 +79,27 @@ These types defend facts that every later adapter must preserve. They do not dec
 The verified client locally encodes the reviewed `pay` and `payWithPermit` shapes from `PaymentId` and `RawTokenAmount`. Its result is destination plus calldata, not a transaction and not authorization. It also mirrors immediate Router input failures such as zero amount, malformed/zero addresses, Router-as-merchant, invalid `uint256`, and incorrectly sized signature components.
 
 This identity check is intentionally bounded. One endpoint can lie consistently about both chain ID and code, `latest` can reorg, and code can be observed again later. Trusted-block anchoring, cross-provider comparison, finality, event indexing, and settlement remain later work.
+
+### Payment Intent API boundary
+
+`PaymentSandbox.Api` owns HTTP parsing, field errors, request size limits,
+idempotency-key rules, response codes, and use-case orchestration. It does not
+reference `PaymentSandbox.Contracts`: creating an intent neither requires nor
+proves a chain connection.
+
+The create boundary normalizes chain IDs, raw amounts, and address casing before
+idempotency comparison. One process-wide lock protects both in-memory indexes,
+so a concurrent retry can publish only one `(Idempotency-Key, PaymentId)` pair.
+Equal terms replay the original resource; different terms return a conflict
+without returning the old intent. The response state `created` describes only
+off-chain acceptance.
+
+This implementation is not durable or horizontally scalable. Restarting the
+process loses every intent and key, and separate processes cannot coordinate
+their retries. There is also no authentication, authorization, tenant boundary,
+rate limiting, expiry, capacity control, or production hosting configuration.
+Week 7 persistence must replace the lock with an equivalent database unique
+constraint and transaction, not a check-then-insert race.
 
 ### Contract boundary
 
@@ -79,12 +113,15 @@ The Router is token-agnostic and has no production token policy. An emitted amou
 
 ## Planned payment architecture
 
-The Router portion of the following diagram exists locally. The API, persistence, wallet integration, indexer, ledger, reconciliation, and signer paths are targets, not current implementations:
+The Router and process-local API portions of the following diagram exist. Durable
+persistence, wallet integration, indexer, ledger, reconciliation, and signer
+paths are targets, not current implementations:
 
 ```mermaid
 flowchart LR
-    Client[Client] -. creates/query .-> API[Payment Intent API]
-    API -. stores .-> IntentStore[(Intent store)]
+    Client[Client] --> API[Payment Intent API]
+    API --> Memory[(Volatile in-memory store)]
+    API -. persists later .-> IntentStore[(Durable intent store)]
     API -. returns payment data .-> Wallet[User wallet]
     Wallet -. user-signed transfer .-> Router[PaymentRouter]
     Router -. transfers token directly .-> Merchant[Merchant wallet]
@@ -101,7 +138,7 @@ The primary payment path is non-custodial: the payer authorizes a token transfer
 
 The later transaction orchestrator is a separate, test-only capability. It must not become an implicit production hot-wallet service merely because it can sign on Anvil or Sepolia.
 
-## Planned component responsibilities
+## Component responsibilities
 
 | Component                     | Owns                                                                              | Must not own                                                                 |
 | ----------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -127,11 +164,14 @@ The architecture must preserve these rules as implementation grows:
 6. Signing policy validates chain, destination, selector, token, amount, and limits before a signer receives a payload.
 7. Login signatures, payment intents, and permits have separate domains and replay controls.
 
-Most of these remain roadmap invariants. The current code establishes exact value types, a narrow non-custodial contract boundary, executable contract failure cases, and a bounded .NET identity gate; it does not implement off-chain settlement.
+Most of these remain roadmap invariants. The current code establishes exact
+value types, a narrow non-custodial contract boundary, executable contract
+failure cases, a bounded .NET identity gate, and process-local business
+idempotency; it does not implement off-chain settlement.
 
 ## Trust boundaries
 
-Future code must treat the following as untrusted input:
+Current and future code must treat the following as untrusted input:
 
 - HTTP requests and configuration values.
 - RPC responses, provider availability, and unfinalized chain data.
@@ -140,7 +180,10 @@ Future code must treat the following as untrusted input:
 - Database state that cannot be traced to a migration and source observation.
 - Any secret found in source control; committing a key makes it compromised, not merely misplaced.
 
-CI intentionally needs no external RPC endpoint or signing secret. Week 5 identity tests use an in-memory fake; see [Threat model](threat-model.md) for the active and residual controls.
+CI intentionally needs no external RPC endpoint or signing secret. Week 5
+identity tests use an in-memory fake, while Week 6 API tests use a real Kestrel
+listener bound to an ephemeral loopback port; see [Threat model](threat-model.md)
+for the active and residual controls.
 
 ## Verification boundary
 

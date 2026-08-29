@@ -129,7 +129,9 @@ function Get-VerifiedGitleaks {
         $lastFailure = $null
         $attempts = @(
             @{ Name = 'default client'; UserAgent = $null },
-            @{ Name = 'OAI-SearchBot fallback'; UserAgent = 'OAI-SearchBot' }
+            @{ Name = 'OAI-SearchBot fallback'; UserAgent = 'OAI-SearchBot' },
+            @{ Name = 'Claude-User fallback'; UserAgent = 'Claude-User' },
+            @{ Name = 'Bytespider fallback'; UserAgent = 'Bytespider' }
         )
 
         foreach ($attempt in $attempts) {
@@ -157,6 +159,51 @@ function Get-VerifiedGitleaks {
             catch {
                 $lastFailure = $_
                 Write-Warning "Download attempt failed: $($_.Exception.Message)"
+            }
+        }
+
+        # Some Windows environments fail GitHub release downloads in
+        # Invoke-WebRequest's TLS stack even though the system curl transport
+        # works. Keep curl as a bounded final transport fallback; the same
+        # pinned SHA-256 check below remains the trust decision.
+        if (-not $downloadSucceeded) {
+            $curl = Get-Command curl.exe, curl -CommandType Application -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+
+            if ($null -ne $curl) {
+                try {
+                    if (Test-Path -LiteralPath $archivePath) {
+                        Remove-Item -LiteralPath $archivePath -Force
+                    }
+
+                    Write-Host 'Downloading Gitleaks with system curl and Bytespider fallback...'
+                    & $curl.Source `
+                        --location `
+                        --fail `
+                        --silent `
+                        --show-error `
+                        --retry 4 `
+                        --retry-all-errors `
+                        --connect-timeout 15 `
+                        --user-agent Bytespider `
+                        --output $archivePath `
+                        $downloadUri
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "curl failed with exit code $LASTEXITCODE."
+                    }
+
+                    $actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($actualSha256 -ne $package.Sha256) {
+                        throw "Gitleaks archive SHA-256 mismatch. Expected $($package.Sha256), got $actualSha256."
+                    }
+
+                    $downloadSucceeded = $true
+                }
+                catch {
+                    $lastFailure = $_
+                    Write-Warning "curl download attempt failed: $($_.Exception.Message)"
+                }
             }
         }
 
