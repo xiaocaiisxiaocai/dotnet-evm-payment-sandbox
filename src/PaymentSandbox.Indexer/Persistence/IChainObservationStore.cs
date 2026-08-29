@@ -15,7 +15,7 @@ public sealed record ObservationCommitResult(
     ChainObservationCheckpoint Checkpoint);
 
 /// <summary>Atomic persistence boundary for observations and their restart cursor.</summary>
-public interface IChainObservationStore
+public interface IChainObservationStore : IChainObservationReader
 {
     ValueTask<ChainObservationCheckpoint?> GetCheckpointAsync(
         EvmChainId chainId,

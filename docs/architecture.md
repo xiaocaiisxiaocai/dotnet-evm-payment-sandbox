@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 9, including the accepted Gate A baseline; and
+1. the implementation through Week 10, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 9
+## Implemented architecture through Week 10
 
 ```mermaid
 flowchart LR
@@ -32,6 +32,9 @@ flowchart LR
     RPC -. exact chainId, blocks,<br/>and Router logs .-> Indexer
     Indexer --> ObservationDb[(SQLite observations,<br/>canonicality history,<br/>and checkpoint)]
     Indexer --> IndexerTests[Fake RPC + loopback JSON-RPC<br/>+ SQLite tests]
+    Indexer -. read-only transition log .-> Ledger[PaymentSandbox.Ledger]
+    Ledger --> LedgerDb[(SQLite provisional effects,<br/>reversals, and source checkpoint)]
+    Ledger --> LedgerTests[State-machine + cross-database<br/>reorg tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
     Router --> ContractChecks[Example, permit, fuzz,<br/>and invariant tests]
@@ -59,6 +62,11 @@ Week 9 extends that library without turning it into a hosted worker. A bounded
 common-ancestor search compares exact RPC headers with the locally selected
 chain. SQLite retains both fork occurrences and records canonicality changes as
 append-only transitions before atomically switching the checkpoint.
+
+Week 10 adds another class library rather than a hosted worker. Ledger consumes
+the Indexer's read-only transition log through an explicit high-watermark and
+writes an independent SQLite database. Canonical payment occurrences append
+provisional effects; later detach transitions append linked reversals.
 
 ### Build and dependency boundary
 
@@ -156,12 +164,43 @@ occurrence's latest transition. Source rows, transitions, and the revision-guard
 checkpoint switch commit together. Same-reorg concurrency or a lost response is
 accepted only after the replacement rows and exact detach/attach history verify.
 
-The checkpoint remains only a durable scan cursor, and `canonical` means this
+The Indexer checkpoint remains only a durable scan cursor, and `canonical` means this
 local observer's current branch selection. It does not define confirmations,
-finality, reversal effects, or credit. No observation changes a Payment Intent or
-ledger. One endpoint may lie or omit logs, Router runtime identity is not yet
+finality, settled credit, or payout authorization. No observation changes a
+Payment Intent. One endpoint may lie or omit logs, Router runtime identity is not yet
 anchored at a trusted block, and the local database has no backup, encryption,
 tamper evidence, retention, or cross-host coordination.
+
+### Provisional ledger boundary
+
+`PaymentSandbox.Ledger` references Domain and Indexer. It consumes only
+`IChainObservationReader`, which exposes a committed global transition
+high-watermark, one stream's ordered transitions, and payments for one exact
+block occurrence. It cannot mutate source observations or the Indexer checkpoint.
+
+The caller selects an explicit transition target. Separate transition and
+payment limits bound each batch. Global transition IDs may contain gaps for a
+stream; checkpointing an empty interval is safe because new append IDs cannot
+later appear below the committed global high-watermark.
+
+The Ledger owns another migration version table and SQLite file. One transaction
+appends every derived entry and revision-guards its source checkpoint. A
+canonical transition adds `canonical_payment`; a noncanonical transition adds
+`canonical_payment_reversal` pointing to the earlier active effect for the same
+exact occurrence. Re-canonicalization creates a new effect generation. Historical
+entries are not updated or deleted.
+
+A versioned SHA-256 fingerprint covers ordered source facts but excludes the
+local recording time. This makes a lost-response retry verifiable even though
+the two databases cannot share one transaction. Exact retries return `Replayed`;
+changed source facts, stale cursors, invalid reversal order, or resource overflow
+fail without advancing the ledger checkpoint.
+
+These entries are provisional consequences of one local branch selection. They
+are not confirmation/finality, token-delivery proof, balances, double-entry
+accounting, reconciliation, payout authorization, or settlement. The local file
+also has no backup, encryption, tamper evidence, retention, or cross-host
+coordination.
 
 ### Contract boundary
 
@@ -175,9 +214,9 @@ The Router is token-agnostic and has no production token policy. An emitted amou
 
 ## Planned payment architecture
 
-The Router, API, SQLite intent store, and bounded Indexer observation portions of
-the following diagram exist. Wallet integration, reorg-safe canonicality,
-ledger, reconciliation, and signer paths are targets, not current implementations:
+The Router, API, SQLite intent store, bounded Indexer observation/reorg, and
+provisional ledger portions of the following diagram exist. Wallet integration,
+finality, reconciliation, and signer paths are targets, not current implementations:
 
 ```mermaid
 flowchart LR
@@ -187,8 +226,8 @@ flowchart LR
     Wallet -. user-signed transfer .-> Router[PaymentRouter]
     Router -. transfers token directly .-> Merchant[Merchant wallet]
     Router -. emits PaymentRecorded .-> Chain[EVM chain]
-    Chain -. logs and blocks .-> Indexer[Observation indexer<br/>reorg recovery planned]
-    Indexer -. canonical observations .-> Ledger[Append-only ledger]
+    Chain -. logs and blocks .-> Indexer[Observation indexer<br/>bounded reorg recovery]
+    Indexer -. canonicality transitions .-> Ledger[Append-only provisional ledger]
     Ledger -. compares evidence .-> Reconcile[Reconciliation]
 
     Orchestrator[Test-only transaction orchestrator] -. policy-approved requests .-> Signer[Signer abstraction]
@@ -207,8 +246,9 @@ The later transaction orchestrator is a separate, test-only capability. It must 
 | `PaymentSandbox.Contracts`    | Typed ABI messages, chain/code identity checks, unsigned local calldata            | Business settlement decisions, private keys, signing or broadcasting          |
 | `PaymentSandbox.Api`          | Payment intent use cases, validation, idempotent HTTP boundary                    | Chain history truth, direct key material                                     |
 | `PaymentSandbox.Indexer`      | Bounded exact-range block/log observations and atomic restart checkpoints          | Settlement, finality claims, mutating chain state, overwriting fork history  |
+| `PaymentSandbox.Ledger`       | Provisional occurrence effects, linked reversals, and a durable source cursor       | Finality, balances, payouts, Intent mutation, or source-history mutation     |
 | `PaymentSandbox.Orchestrator` | Test-only transaction requests, attempts, nonce coordination, replacement history | Custody claims, arbitrary signing                                            |
-| Ledger/reconciliation         | Append-only business effects, reversals, explainable differences                  | Treating a wallet balance as an accounting ledger                            |
+| Reconciliation                | Explainable comparisons among intents, chain evidence, ledger, and token evidence | Treating a wallet balance as an accounting ledger                            |
 | Solidity contracts            | Direct payer-to-merchant transfer, exact permit path, and payment event semantics | Accepted-token policy, off-chain invoices, finality, reconciliation, custody |
 
 Dependencies point inward toward Domain. Infrastructure implements interfaces defined around use cases; Domain does not import an infrastructure SDK to make an adapter convenient.
@@ -228,8 +268,9 @@ The architecture must preserve these rules as implementation grows:
 Most of these remain roadmap invariants. The current code establishes exact
 value types, a narrow non-custodial contract boundary, executable contract
 failure cases, a bounded .NET identity gate, durable local business idempotency,
-and append-only chain observations with a restart cursor. It does not implement
-confirmation/finality, ledger effects, or off-chain settlement.
+append-only chain observations, bounded fork recovery, and provisional linked
+effect/reversal history. It does not implement confirmation/finality,
+reconciliation, balances, or off-chain settlement.
 
 ## Trust boundaries
 
@@ -244,10 +285,11 @@ Current and future code must treat the following as untrusted input:
 
 CI intentionally needs no external RPC endpoint or signing secret. Week 5
 identity tests use an in-memory fake, Week 7 API tests use real Kestrel listeners
-and isolated temporary SQLite files, and Weeks 8-9 combine fake-RPC/fork tests
+and isolated temporary SQLite files, and Weeks 8-10 combine fake-RPC/fork tests
 with a loopback raw JSON-RPC/ABI fixture and real temporary SQLite files. These
 exercise protocol mapping, migration, restart, constraints, exact retry,
-concurrent scanners, range/reorg limits, fork retention, and atomic branch switching; see [Threat
+concurrent scanners/ledger writers, range/reorg/ledger limits, fork retention,
+atomic branch switching, and cross-database effect/reversal projection; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary

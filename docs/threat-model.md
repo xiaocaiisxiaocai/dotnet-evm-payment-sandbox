@@ -1,6 +1,6 @@
 # Threat Model v1
 
-- Status: Week 9 bounded update to the Week 1 security baseline
+- Status: Week 10 bounded update to the Week 1 security baseline
 - Last updated: 2026-08-30
 - Owner: repository maintainer
 
@@ -14,9 +14,9 @@ The current model covers:
 
 - The developer workstation, Git working tree, and repository-local `.tools` directory.
 - The GitHub repository and read-only GitHub Actions workflows.
-- The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including the typed contract adapter, runnable SQLite-backed Payment Intent API, bounded chain-observation/checkpoint library, identity checks, permit, fuzz, invariant, and local deployment tests.
+- The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including the typed contract adapter, runnable SQLite-backed Payment Intent API, bounded chain-observation/checkpoint library, provisional reversible ledger, identity checks, permit, fuzz, invariant, and local deployment tests.
 - Local Anvil, plus one later smoke test on Ethereum Sepolia.
-- Finality for the partial Indexer boundary, plus the Ledger, Orchestrator, and SIWE components planned for later gates.
+- Finality and reconciliation for the partial Indexer/Ledger boundary, plus the Orchestrator and SIWE components planned for later gates.
 
 The following are explicitly out of scope:
 
@@ -42,7 +42,8 @@ GitHub Actions (read-only, no signing secret)
 Later data flow:
 HTTP client -> local API -> local SQLite intent store
 Payer -> Anvil/Sepolia -> untrusted RPC -> bounded Indexer batch -> local SQLite observations/checkpoint
-Future canonical observations -> Ledger/reconciliation
+Indexer transition log -> provisional Ledger effects/reversals -> separate local SQLite checkpoint
+Future finality/reconciliation -> explainable business decisions
 Test signing request -> Orchestrator -> isolated test wallet -> Anvil/Sepolia
 ```
 
@@ -50,6 +51,7 @@ Boundary assumptions:
 
 - Download sites and third-party Actions are supply-chain boundaries. A version label alone is insufficient; Actions use commit SHAs and downloaded archives use fixed SHA-256 values.
 - RPC output is untrusted. Week 5 checks self-reported chain ID and latest code at an operator-configured address against a reviewed runtime hash. Week 8 additionally requires an explicit range, matching chain ID, complete numbered blocks, parent continuity, bounded logs, exact emitter/block occurrence fields, and atomic observation/checkpoint persistence. Week 9 bounds common-ancestor search, retains both forks, and atomically records detach/attach transitions. One endpoint can still lie or omit data; trusted blocks, independent cross-checks, completeness evidence, confirmations, and finality remain later controls.
+- Ledger input is derived from the local Indexer, not from an independent truth source. Week 10 consumes only committed transition IDs, bounds transitions/payments, preserves exact occurrence identity, appends linked reversals, and atomically advances its own source checkpoint. This contains duplicate/lost local effects but does not make a dishonest or incomplete RPC observation true.
 - HTTP bodies and headers are untrusted. Week 6 validates exact integer/address shapes, requires a bounded idempotency key, caps request bodies at 16 KiB, and returns non-leaking conflicts. The API has no identity or tenant boundary and must remain loopback/test-only.
 - Database paths are operator-controlled configuration. Week 7 resolves one absolute path, runs known migrations before listening, rejects future schema versions, and uses parameterized SQL. A local database file remains mutable, unencrypted application data rather than a trust anchor.
 - Pull-request code is untrusted input. CI has no deployment key, does not use `pull_request_target`, retains no checkout credentials, and receives only `contents: read` permission.
@@ -63,7 +65,7 @@ Boundary assumptions:
 | Credential-bearing RPC URL | Quota theft and activity disclosure | Stored only in ignored local configuration; examples contain no credential |
 | Signed raw transaction | Can be replayed while valid | Not implemented before Gate D; later treated as sensitive and never logged |
 | Chain, contract, and code-hash configuration | Wrong-chain execution or incorrect credit | Local syntax checks, chain/address/runtime matching, and Week 8 per-batch chain/Router policy exist; startup, trusted-block, and RPC-switch controls remain Gate B work |
-| Payment intents, observations, checkpoints, and ledger | Duplicate credit, lost entries, or unexplained differences | Intent idempotency and append-only block/event/canonicality history use separate strict schemas; source rows, fork transitions, and checkpoint changes commit atomically; ledger reversals, finality, and reconciliation remain Gates B/C |
+| Payment intents, observations, checkpoints, and ledger | Duplicate credit, lost entries, or unexplained differences | Separate strict schemas; atomic intent idempotency and observation branch changes; ledger source fingerprints/checkpoints, unique effects, linked reversals, and atomic retry verification; finality, balances, tamper evidence, and reconciliation remain Gates B/C |
 | CI token and workflow | Repository or release-chain modification | Read-only permission, pinned Actions, and no persisted checkout credential |
 | Dependency graph and build tools | Replaced or non-reproducible builds | Exact SDK/tool versions, NuGet locks, gitlinks, and verified archive hashes |
 
@@ -82,6 +84,7 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 9. An intent in `created` state must never be presented as wallet authorization, a transaction, chain observation, or settled funds.
 10. An API process must not accept requests until every known database migration is applied; a newer unknown schema must fail closed.
 11. An Indexer checkpoint is a restart cursor only; reorg recovery must be bounded and atomic, and no observed or locally canonical log may directly authorize credit or finality.
+12. A provisional ledger effect records the consequence of local canonicality only; reversal must append and reference its earlier active effect, and neither entry may be presented as final settlement or payout authority.
 
 ## 6. Risk Register
 
@@ -95,9 +98,9 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 | S04 | A public Anvil default key is reused on Sepolia or mainnet | Medium | High | Explicit local-only boundary and a separate Sepolia burner | Controlled | Gate A |
 | S05 | A malicious or incorrect RPC reports the wrong chain or contract state | Medium | High | Week 5 checks chain/address/runtime identity; Week 8 checks exact ranges, block identity/parents, emitter and event occurrence fields; trusted-block and independent-provider checks remain | Partly controlled | Gate B |
 | S06 | Configuration error deploys or signs on mainnet | Low | High | `DeployLocal` already fails closed outside chain ID `31337`; future signing and Sepolia entry points must use an explicit allowlist and reject chain ID `1` | Partly controlled | Gates A/B |
-| S07 | Reorg, truncated logs, or incorrect finality causes false credit | Medium | High | Weeks 8-9 store exact fork occurrences, reject malformed ranges, bound common-ancestor search, retain detached evidence, and atomically append canonicality transitions plus the checkpoint switch; completeness checks, ledger reversals, confirmations, and finality remain | Partly controlled | Gates B/C |
+| S07 | Reorg, truncated logs, or incorrect finality causes false credit | Medium | High | Weeks 8-9 store exact fork occurrences, reject malformed ranges, bound common-ancestor search, retain detached evidence, and atomically append canonicality transitions; Week 10 projects detach into linked provisional reversal; completeness checks, confirmations, finality, and authorization remain | Partly controlled | Gates B/C |
 | S08 | Retry, concurrent nonce use, or unknown broadcast causes double payment | Medium | High | Week 7 atomically deduplicates durable intent creation through a SQLite unique key and transaction; nonce coordination, persisted raw transaction/hash, and same-payload rebroadcast remain | Partly controlled | Gates B/D |
-| S09 | SQLite or ledger data is modified and balances become unexplainable | Medium | Medium | Versioned migrations, `STRICT`/`CHECK`/foreign-key constraints, parameterized SQL, append-only observation identities, and atomic checkpoint revisions exist; backup, tamper evidence, ledger reversals, and reconciliation remain | Partly controlled | Gate C |
+| S09 | SQLite or ledger data is modified and effects become unexplainable | Medium | Medium | Versioned migrations, `STRICT`/`CHECK`/foreign-key/trigger constraints, parameterized SQL, append-only source/effect identities, linked reversals, source fingerprints, and atomic checkpoint revisions exist; backup, tamper evidence, finalized balances, and reconciliation remain | Partly controlled | Gate C |
 | S10 | Secret scanning exits successfully while its rules are ineffective | Low | High | Fixed scanner version plus a dynamic canary with a dedicated expected exit code | Controlled | Gate A |
 | S11 | Typed-data authorization is replayed across users, chains, or contracts | Medium | High | Domain, chain ID, verifying contract, nonce, deadline, and concurrent-consumption tests | Planned | Gate E |
 | S12 | A testnet RPC fails, test funds disappear, or test data is public | High | Low | Assign no value to test funds, store no customer data, and use Anvil for daily work | Accepted | Ongoing |

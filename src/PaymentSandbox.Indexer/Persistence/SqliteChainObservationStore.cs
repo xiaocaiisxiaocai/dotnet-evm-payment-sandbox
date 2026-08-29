@@ -1,7 +1,9 @@
 using System.Data;
 using System.Globalization;
+using System.Numerics;
 using Microsoft.Data.Sqlite;
 using PaymentSandbox.Domain.Evm;
+using PaymentSandbox.Domain.Payments;
 using PaymentSandbox.Indexer.Chain;
 
 namespace PaymentSandbox.Indexer.Persistence;
@@ -23,6 +25,126 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
         cancellationToken.ThrowIfCancellationRequested();
         await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
         return await ReadCheckpointAsync(connection, null, chainId, router, cancellationToken);
+    }
+
+    public async ValueTask<long> GetCanonicalityHighWatermarkAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COALESCE(MAX(transition_id), 0) FROM block_canonicality_transitions;";
+        return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    public async ValueTask<IReadOnlyList<BlockCanonicalityTransition>>
+        GetCanonicalityTransitionsAsync(
+            EvmChainId chainId,
+            EvmAddress router,
+            long afterTransitionId,
+            long throughTransitionId,
+            int maxCount,
+            CancellationToken cancellationToken = default)
+    {
+        ValidateReadStream(chainId, router);
+        ArgumentOutOfRangeException.ThrowIfNegative(afterTransitionId);
+        if (throughTransitionId < afterTransitionId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(throughTransitionId),
+                "The transition target cannot precede the exclusive cursor.");
+        }
+
+        ValidateReadLimit(maxCount);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT transition_id, block_number, block_hash,
+                   checkpoint_revision, canonicality, reason, changed_at_utc
+            FROM block_canonicality_transitions
+            WHERE chain_id = $chainId AND router_address = $routerAddress
+              AND transition_id > $afterTransitionId
+              AND transition_id <= $throughTransitionId
+            ORDER BY transition_id
+            LIMIT $maxCount;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$afterTransitionId", afterTransitionId);
+        command.Parameters.AddWithValue("$throughTransitionId", throughTransitionId);
+        command.Parameters.AddWithValue("$maxCount", maxCount);
+        var transitions = new List<BlockCanonicalityTransition>();
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            transitions.Add(new BlockCanonicalityTransition(
+                reader.GetInt64(0),
+                chainId,
+                router,
+                reader.GetInt64(1),
+                EvmHash.Parse(reader.GetString(2)),
+                reader.GetInt64(3),
+                ParseCanonicality(reader.GetString(4)),
+                reader.GetString(5),
+                ParseTimestamp(reader.GetString(6))));
+        }
+
+        return transitions;
+    }
+
+    public async ValueTask<IReadOnlyList<PaymentRecordedObservation>> GetPaymentsAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        long blockNumber,
+        EvmHash blockHash,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReadStream(chainId, router);
+        ArgumentOutOfRangeException.ThrowIfNegative(blockNumber);
+        ArgumentNullException.ThrowIfNull(blockHash);
+        ValidateReadLimit(maxCount);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT transaction_hash, log_index, payment_id, payer_address,
+                   token_address, merchant_address, amount_raw
+            FROM payment_recorded_observations
+            WHERE chain_id = $chainId AND router_address = $routerAddress
+              AND block_number = $blockNumber AND block_hash = $blockHash
+            ORDER BY transaction_hash, log_index
+            LIMIT $maxCount;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$blockNumber", blockNumber);
+        command.Parameters.AddWithValue("$blockHash", blockHash.Value);
+        command.Parameters.AddWithValue("$maxCount", maxCount);
+        var payments = new List<PaymentRecordedObservation>();
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            payments.Add(new PaymentRecordedObservation(
+                chainId,
+                router,
+                blockNumber,
+                blockHash,
+                EvmHash.Parse(reader.GetString(0)),
+                reader.GetInt64(1),
+                PaymentId.Parse(reader.GetString(2)),
+                EvmAddress.Parse(reader.GetString(3)),
+                EvmAddress.Parse(reader.GetString(4)),
+                EvmAddress.Parse(reader.GetString(5)),
+                new RawTokenAmount(BigInteger.Parse(
+                    reader.GetString(6),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture))));
+        }
+
+        return payments;
     }
 
     public async ValueTask<ObservedBlock?> GetCanonicalBlockAsync(
@@ -950,6 +1072,35 @@ public sealed class SqliteChainObservationStore(IndexerDatabase database)
         command.Parameters.AddWithValue("$chainId", chainId.ToString());
         command.Parameters.AddWithValue("$routerAddress", router.Value);
     }
+
+    private static void ValidateReadStream(EvmChainId? chainId, EvmAddress? router)
+    {
+        ArgumentNullException.ThrowIfNull(chainId);
+        ArgumentNullException.ThrowIfNull(router);
+        if (router.IsZero)
+        {
+            throw new ArgumentException("The Router address cannot be zero.", nameof(router));
+        }
+    }
+
+    private static void ValidateReadLimit(int maxCount)
+    {
+        if (maxCount is < 1 or > 100_001)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxCount),
+                "A source read must request between 1 and 100,001 rows.");
+        }
+    }
+
+    private static BlockCanonicality ParseCanonicality(string value) =>
+        value switch
+        {
+            "canonical" => BlockCanonicality.Canonical,
+            "noncanonical" => BlockCanonicality.Noncanonical,
+            _ => throw new InvalidOperationException(
+                $"Stored canonicality value '{value}' is not supported."),
+        };
 
     private static void AddPaymentParameters(
         SqliteCommand command,

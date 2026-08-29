@@ -303,6 +303,50 @@ public sealed class SqliteChainObservationStoreTests
     }
 
     [Fact]
+    public async Task ReadBoundary_ReturnsOrderedTransitionsAndExactBlockPayments()
+    {
+        await using var temporary = new TemporaryIndexerDatabase();
+        IndexerDatabase database = IndexerTestData.CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        var store = new SqliteChainObservationStore(database);
+        await store.CommitBatchAsync(
+            null,
+            IndexerTestData.Batch(),
+            TestContext.Current.CancellationToken);
+
+        long highWatermark = await store.GetCanonicalityHighWatermarkAsync(
+            TestContext.Current.CancellationToken);
+        IReadOnlyList<BlockCanonicalityTransition> transitions =
+            await store.GetCanonicalityTransitionsAsync(
+                IndexerTestData.ChainId,
+                IndexerTestData.Router,
+                afterTransitionId: 0,
+                throughTransitionId: highWatermark,
+                maxCount: 10,
+                TestContext.Current.CancellationToken);
+        IReadOnlyList<PaymentRecordedObservation> payments = await store.GetPaymentsAsync(
+            IndexerTestData.ChainId,
+            IndexerTestData.Router,
+            blockNumber: 101,
+            IndexerTestData.Hash('2'),
+            maxCount: 10,
+            TestContext.Current.CancellationToken);
+        IReadOnlyList<PaymentRecordedObservation> wrongFork = await store.GetPaymentsAsync(
+            IndexerTestData.ChainId,
+            IndexerTestData.Router,
+            blockNumber: 101,
+            IndexerTestData.Hash('e'),
+            maxCount: 10,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, highWatermark);
+        Assert.Equal([1L, 2L], transitions.Select(item => item.TransitionId));
+        Assert.All(transitions, item => Assert.Equal(BlockCanonicality.Canonical, item.Canonicality));
+        Assert.Equal(IndexerTestData.Batch().Payments, payments);
+        Assert.Empty(wrongFork);
+    }
+
+    [Fact]
     public async Task Schema_RejectsNonCanonicalDirectObservation()
     {
         await using var temporary = new TemporaryIndexerDatabase();
