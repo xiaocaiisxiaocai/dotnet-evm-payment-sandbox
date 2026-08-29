@@ -188,6 +188,13 @@ ABI/runtime/storage baseline, replayed successful and reverted Anvil evidence
 from 1,097 Git-known files, proved the dynamic Gitleaks canary, and found no
 secret in the candidate tree or complete 15-commit history.
 
+Implementation commit
+[`263288d`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/263288d)
+and GitHub Actions run
+[`33263968803`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33263968803)
+record the cross-platform result. The locked .NET, Foundry/RPC, and working-rules
+plus full-history secret-scan jobs all passed.
+
 ## What the database still cannot prove
 
 A stored row proves that this application accepted one endpoint's response at a
