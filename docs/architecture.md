@@ -194,6 +194,12 @@ already appended authorization/outcome edge and returns replayed without
 duplicating or reversing that evidence. Contradictory outcome facts and a new
 replacement while the current one remains unbroadcast still fail closed.
 
+The Windows temporary SQLite fixtures clear process-wide connection pools
+before deleting their owned directories. Affected test assemblies therefore
+serialize independent xUnit cases to prevent one fixture cleanup from racing
+another case's connection open. Explicit in-test concurrency remains enabled,
+and separate test assemblies still run in independent processes.
+
 ### Transaction lifecycle boundary
 
 `PaymentSandbox.Orchestrator` separates four facts that are often collapsed into

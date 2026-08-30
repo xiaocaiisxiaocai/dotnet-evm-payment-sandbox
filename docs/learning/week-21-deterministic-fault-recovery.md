@@ -180,7 +180,22 @@ The absence of repeated calls in these fakes does not make all production
 dependencies idempotent. A future hosted worker still needs explicit retry
 ownership, attempt budgets, timeouts, operator-visible ambiguity, and runbooks.
 
-## 8. Recommended reading order
+## 8. Test cleanup isolation
+
+Formal Release verification exposed a separate test-infrastructure race. Each
+temporary SQLite helper calls `SqliteConnection.ClearAllPools()` before deleting
+its Windows directory. That method is process-wide: if xUnit runs two test cases
+in the same assembly concurrently, one case can clear a pooled handle while the
+other is opening it, producing a non-deterministic `ObjectDisposedException`.
+
+Every affected SQLite test assembly now uses xUnit's assembly-level
+`Parallelization(Mode = ParallelMode.None)`. This serializes independent test
+cases inside that process. It does not weaken the explicit concurrency tests:
+their `Task.WhenAll` calls still create simultaneous workflow/store operations
+inside one test. Different test projects also remain separate processes and can
+run concurrently under `dotnet test`.
+
+## 9. Recommended reading order
 
 1. `tests/PaymentSandbox.Testing/Faults/OneShotPostCompletionFaultTelemetry.cs`;
 2. `src/PaymentSandbox.Observability/OperationalExecution.cs`;
@@ -190,10 +205,9 @@ ownership, attempt budgets, timeouts, operator-visible ambiguity, and runbooks.
 6. `SqlitePermitWorkflowStore.RecordOutcomeAsync` and
    `IsOutcomeReplayAsync`.
 
-## 9. Next boundary
+## 10. Next boundary
 
 Week 22 should turn the now-explicit ambiguous states and retry rules into an
 operator runbook. It should define observation, safe retry, escalation, and
 stop conditions without claiming that metrics or exception text are settlement
 evidence.
-
