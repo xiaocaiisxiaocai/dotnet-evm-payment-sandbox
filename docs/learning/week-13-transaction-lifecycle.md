@@ -206,7 +206,10 @@ Foundry tests, the reviewed 1,030-byte/zero-storage-slot Router baseline, and
 successful/reverted Anvil replay from 1,209 Git-known files. The dynamic secret
 canary, candidate-tree scan, and complete 29-commit history scan found no leaks.
 Implementation commit `60f88c1` records the verified code boundary. Remote CI
-evidence is added only after the pushed commit finishes.
+run
+[`33293499164`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33293499164)
+then passed all three jobs: locked .NET build/tests, Foundry
+build/tests/RPC observation, and working-rules/full-history secret scan.
 
 ## Suggested reading order
 

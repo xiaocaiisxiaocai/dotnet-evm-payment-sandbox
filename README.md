@@ -344,8 +344,9 @@ tests, including 30/30 focused Orchestrator tests. All 36 unchanged Foundry
 tests, the 1,030-byte/zero-slot Router baseline, and successful/reverted Anvil
 replay from 1,209 Git-known files also passed. The dynamic secret canary and
 candidate-tree/full-history scans passed across 29 commits. Implementation
-commit `60f88c1` records this code boundary; the remote CI link is added only
-after its pushed run completes.
+commit `60f88c1` records this code boundary. GitHub Actions run
+[`33293499164`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33293499164)
+passed the locked .NET, Foundry/RPC observation, and secret-scan jobs.
 
 ## Architecture rules
 
