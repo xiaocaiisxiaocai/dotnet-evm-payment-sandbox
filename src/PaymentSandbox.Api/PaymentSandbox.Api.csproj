@@ -4,6 +4,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PaymentSandbox.Authentication\PaymentSandbox.Authentication.csproj" />
     <ProjectReference Include="..\PaymentSandbox.Domain\PaymentSandbox.Domain.csproj" />
   </ItemGroup>
 </Project>

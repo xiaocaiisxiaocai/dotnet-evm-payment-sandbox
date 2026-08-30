@@ -1,5 +1,10 @@
+using PaymentSandbox.Api.Authentication;
 using PaymentSandbox.Api.PaymentIntents;
 using PaymentSandbox.Api.Persistence;
+using PaymentSandbox.Authentication.BrowserSessions;
+using PaymentSandbox.Authentication.Persistence;
+using PaymentSandbox.Authentication.Siwe;
+using PaymentSandbox.Domain.Evm;
 
 namespace PaymentSandbox.Api;
 
@@ -23,6 +28,44 @@ public static class PaymentSandboxApi
 
         builder.Services.AddProblemDetails();
         builder.Services.AddSingleton(TimeProvider.System);
+
+        // The SIWE policy is server-owned. In particular, neither Host nor
+        // Origin from an untrusted request is copied into the signed message.
+        builder.Services.AddSingleton(serviceProvider =>
+        {
+            IConfigurationSection section = builder.Configuration.GetSection("Authentication");
+            return new SiweAuthenticationPolicy(
+                new Uri(section["Origin"] ?? "https://auth.example", UriKind.Absolute),
+                new Uri(
+                    section["RequestUri"] ?? "https://auth.example/login",
+                    UriKind.Absolute),
+                EvmChainId.Parse(section["ChainId"] ?? "31337"),
+                section["Statement"] ?? "Sign in to the dotnet EVM payment sandbox.",
+                TimeSpan.FromSeconds(section.GetValue("ChallengeLifetimeSeconds", 300)),
+                TimeSpan.FromSeconds(section.GetValue("AllowedClockSkewSeconds", 30)));
+        });
+        builder.Services.AddSingleton(serviceProvider =>
+        {
+            IConfigurationSection section = builder.Configuration.GetSection("Authentication");
+            string configuredPath = section["DatabasePath"] ?? "data/authentication.db";
+            string absolutePath = Path.IsPathFullyQualified(configuredPath)
+                ? configuredPath
+                : Path.Combine(builder.Environment.ContentRootPath, configuredPath);
+            return new SiweChallengeDatabaseOptions(
+                absolutePath,
+                section.GetValue("ChallengeCapacity", 1_024),
+                section.GetValue("SessionCapacity", 1_024));
+        });
+        builder.Services.AddSingleton(serviceProvider => new SiweBrowserSessionPolicy(
+            TimeSpan.FromSeconds(builder.Configuration.GetSection("Authentication")
+                .GetValue("SessionLifetimeSeconds", 1_800))));
+        builder.Services.AddSingleton<SiweChallengeDatabase>();
+        builder.Services.AddHostedService<SiweAuthenticationDatabaseInitializer>();
+        builder.Services.AddSingleton<ISiweChallengeStore, SqliteSiweChallengeStore>();
+        builder.Services.AddSingleton<SiweAuthenticationService>();
+        builder.Services.AddSingleton<ISiweBrowserSessionStore, SqliteSiweBrowserSessionStore>();
+        builder.Services.AddSingleton<SiweBrowserSessionService>();
+
         builder.Services.AddSingleton(serviceProvider =>
         {
             string configuredPath = builder.Configuration["PaymentIntents:DatabasePath"]
@@ -44,6 +87,7 @@ public static class PaymentSandboxApi
 
         WebApplication app = builder.Build();
         app.UseExceptionHandler();
+        app.MapSiweAuthenticationEndpoints();
         app.MapPaymentIntentEndpoints();
         return app;
     }

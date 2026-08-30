@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PaymentSandbox.Api;
 using PaymentSandbox.Api.Persistence;
+using PaymentSandbox.Authentication.Persistence;
 
 namespace PaymentSandbox.Api.Tests.Infrastructure;
 
@@ -28,12 +29,16 @@ internal sealed class ApiTestHost : IAsyncDisposable
 
     public static async Task<ApiTestHost> StartAsync(
         TimeProvider? timeProvider = null,
-        string? databasePath = null)
+        string? databasePath = null,
+        string? authenticationDatabasePath = null)
     {
-        TemporarySqliteDatabase? ownedDatabase = databasePath is null
+        TemporarySqliteDatabase? ownedDatabase =
+            databasePath is null || authenticationDatabasePath is null
             ? new TemporarySqliteDatabase()
             : null;
         string effectiveDatabasePath = databasePath ?? ownedDatabase!.DatabasePath;
+        string effectiveAuthenticationDatabasePath = authenticationDatabasePath ??
+            ownedDatabase!.AuthenticationDatabasePath;
 
         WebApplication app = PaymentSandboxApi.Build(
             ["--urls", "http://127.0.0.1:0"],
@@ -48,6 +53,8 @@ internal sealed class ApiTestHost : IAsyncDisposable
 
                 builder.Services.AddSingleton(
                     new PaymentIntentDatabaseOptions(effectiveDatabasePath));
+                builder.Services.AddSingleton(
+                    new SiweChallengeDatabaseOptions(effectiveAuthenticationDatabasePath));
             });
 
         try

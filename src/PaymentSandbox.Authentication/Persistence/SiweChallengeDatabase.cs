@@ -30,6 +30,7 @@ public sealed class SiweChallengeDatabase
 
     public string DatabasePath => _options.DatabasePath;
     public int Capacity => _options.Capacity;
+    public int SessionCapacity => _options.SessionCapacity;
 
     /// <summary>Creates the parent directory and atomically advances the schema.</summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -110,7 +111,7 @@ public sealed class SiweChallengeDatabase
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await EnsureCapacityAsync(connection, transaction, cancellationToken);
+        await EnsureCapacitiesAsync(connection, transaction, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }
@@ -154,7 +155,7 @@ public sealed class SiweChallengeDatabase
         return migrations;
     }
 
-    private async Task EnsureCapacityAsync(
+    private async Task EnsureCapacitiesAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         CancellationToken cancellationToken)
@@ -164,22 +165,42 @@ public sealed class SiweChallengeDatabase
             insert.Transaction = transaction;
             insert.CommandText =
                 """
-                INSERT INTO siwe_store_settings (singleton, capacity)
-                VALUES (1, $capacity)
+                INSERT INTO siwe_store_settings (singleton, capacity, session_capacity)
+                VALUES (1, $capacity, $sessionCapacity)
                 ON CONFLICT (singleton) DO NOTHING;
                 """;
             insert.Parameters.AddWithValue("$capacity", _options.Capacity);
+            insert.Parameters.AddWithValue("$sessionCapacity", _options.SessionCapacity);
             await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // A Week 16 database already has the singleton row. Migration 2 adds a
+        // nullable column so this one reviewed initialization can fill it once.
+        await using (SqliteCommand initializeSessionCapacity = connection.CreateCommand())
+        {
+            initializeSessionCapacity.Transaction = transaction;
+            initializeSessionCapacity.CommandText =
+                """
+                UPDATE siwe_store_settings
+                SET session_capacity = $sessionCapacity
+                WHERE singleton = 1 AND session_capacity IS NULL;
+                """;
+            initializeSessionCapacity.Parameters.AddWithValue(
+                "$sessionCapacity", _options.SessionCapacity);
+            await initializeSessionCapacity.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await using SqliteCommand read = connection.CreateCommand();
         read.Transaction = transaction;
-        read.CommandText = "SELECT capacity FROM siwe_store_settings WHERE singleton = 1;";
-        object? stored = await read.ExecuteScalarAsync(cancellationToken);
-        if (stored is not long storedCapacity || storedCapacity != _options.Capacity)
+        read.CommandText =
+            "SELECT capacity, session_capacity FROM siwe_store_settings WHERE singleton = 1;";
+        await using SqliteDataReader reader = await read.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) ||
+            reader.GetInt64(0) != _options.Capacity ||
+            reader.GetInt64(1) != _options.SessionCapacity)
         {
             throw new InvalidOperationException(
-                "The configured SIWE challenge capacity does not match the database-owned capacity.");
+                "The configured SIWE challenge or session capacity does not match the database-owned capacity.");
         }
     }
 

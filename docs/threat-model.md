@@ -1,6 +1,6 @@
 # Threat Model v1
 
-- Status: Week 16 durable SIWE challenge update to the Week 1 security baseline
+- Status: Week 17 loopback SIWE session update to the Week 1 security baseline
 - Last updated: 2026-08-30
 - Owner: repository maintainer
 
@@ -16,7 +16,7 @@ The current model covers:
 - The GitHub repository and read-only GitHub Actions workflows.
 - The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including the typed contract adapter, runnable SQLite-backed Payment Intent API, bounded SIWE challenge verification, chain-observation/checkpoint library, provisional reversible ledger, reversible confirmation qualification, explainable reconciliation reports, test-only transaction lifecycle, identity checks, permit, fuzz, invariant, and local deployment tests.
 - Local Anvil, plus one later smoke test on Ethereum Sepolia.
-- Protocol-native finality, token-delivery proof, accounting, production/public-network signer and RPC adapters, browser/session SIWE components, and authorization planned for later gates.
+- Protocol-native finality, token-delivery proof, accounting, production/public-network signer and RPC adapters, production browser hosting, and authorization planned for later gates.
 
 The following are explicitly out of scope:
 
@@ -46,7 +46,7 @@ Indexer transition log -> provisional Ledger effects/reversals -> separate local
 Indexer head snapshot + caught-up Ledger -> reversible confirmation qualification
 Intent + caught-up Ledger/Finality snapshots -> append-only explainable reconciliation
 Test signing request -> Orchestrator -> ephemeral process-local wallet -> loopback Anvil
-Configured relying party -> SIWE challenge -> EOA signature -> atomic SQLite consume
+Configured relying party -> loopback SIWE challenge -> browser binding -> EOA signature -> opaque SQLite session
 ```
 
 Boundary assumptions:
@@ -57,8 +57,8 @@ Boundary assumptions:
 - Finality input is still derived from the same local RPC observation path. Week 11 atomically pairs the Indexer head with its transition watermark, requires Ledger to be exactly caught up, requires the exact Ledger entry high-watermark, and appends reversible threshold decisions. This prevents known-but-unconsumed local reversals from being qualified; it does not prove provider honesty, log completeness, consensus finalization, or economic irreversibility.
 - Reconciliation compares only locally derived facts. Week 12 atomically watermarks Intent, Ledger, and Finality reads; requires exact cross-source catch-up; bounds per-payment histories; and appends complete evidence plus stable discrepancy codes. This makes partial, duplicate, mismatched, and reversed histories explainable, but a consistent report is not token delivery, protocol finality, accounting credit, or permission to settle.
 - Orchestrator adapters are untrusted side-effect boundaries. Week 13 allowlists only Anvil/Sepolia, binds one verified Router and signer policy, persists before broadcast, repeats exact signed bytes after an unknown result, and recomputes durable raw/unsigned identities before reuse. Week 14 adds a concrete generated-key path that is narrower than the general policy: credential-free loopback HTTP, an Anvil client, chain `31337`, reviewed Router runtime, canonical type-2 re-encoding, exact unsigned-field comparison, and recovered-signer matching before broadcast. There is still no imported key, Sepolia adapter, hosted worker, or production key provider.
-- SIWE messages, signatures, and nonces are untrusted authentication input. Week 15 fixes one HTTPS relying party, same-origin URI, statement, Anvil/Sepolia chain, lifetime, and skew; requires a canonical EIP-55/whole-second ERC-4361 subset; and recovers an ERC-191 EOA. Week 16 persists only server-issued facts and one-way consumption in a separately migrated SQLite file; immediate transactions coordinate local processes, initialization pins one database-owned capacity, and exact expiry/fact checks remain inside the atomic update. There is no browser/session binding or HTTP origin source, and a successful result grants no role or payment authority.
-- HTTP bodies and headers are untrusted. Week 6 validates exact integer/address shapes, requires a bounded idempotency key, caps request bodies at 16 KiB, and returns non-leaking conflicts. The API has no identity or tenant boundary and must remain loopback/test-only.
+- SIWE messages, signatures, nonces, browser cookies, and Origin headers are untrusted authentication input. Weeks 15-16 fix one HTTPS relying party, canonical ERC-4361/EOA recovery, exact expiry, and durable one-way challenge use. Week 17 additionally requires a loopback peer and exact configured Origin, binds each nonce to a hashed 256-bit HttpOnly flow secret, and stores only hashes of bounded session/CSRF credentials. Relogin rotates an optional old session in the replacement transaction; logout requires fixed-time cookie/header CSRF equality and one-way revocation. Separate files/hosts do not coordinate, and a session grants no role or payment authority.
+- HTTP bodies and headers are untrusted. Week 6 validates exact integer/address shapes, requires a bounded idempotency key, caps request bodies at 16 KiB, and returns non-leaking conflicts. Week 17 adds generic authentication failures, unique canonical cookie parsing, no-store responses, and exact Origin on authentication writes. Payment Intent endpoints still have no authorization or tenant boundary, and the whole API remains loopback/test-only.
 - Database paths are operator-controlled configuration. Week 7 resolves one absolute path, runs known migrations before listening, rejects future schema versions, and uses parameterized SQL. A local database file remains mutable, unencrypted application data rather than a trust anchor.
 - Pull-request code is untrusted input. CI has no deployment key, does not use `pull_request_target`, retains no checkout credentials, and receives only `contents: read` permission.
 - Local SQLite files and logs do not provide production-grade confidentiality or tamper resistance.
@@ -70,7 +70,7 @@ Boundary assumptions:
 | Test-wallet private key or mnemonic | Unauthorized signatures and loss of test assets | Week 14 generates an Anvil-only key inside the process, never imports/returns/logs/persists it, and best-effort zeroes the owned byte array; future Sepolia uses a separate isolated burner |
 | Credential-bearing RPC URL | Quota theft and activity disclosure | Stored only in ignored local configuration; examples contain no credential |
 | Signed raw transaction | Can be replayed while valid | Stored only in the local unencrypted lifecycle database for exact retry; snapshots, strings, boundary exceptions, and Week 14 harness output redact it; clean replay deletes its temporary database |
-| SIWE nonce, plaintext, and signature | Captured proof may be replayed or correlated with an address | 128-bit server nonce, short expiry, exact configured origin/URI/chain/statement/time comparison, ERC-191 recovery, durable atomic one-time consume, bounded parser/store, and redacted exception/string output; SQLite stores no wallet address, plaintext, or signature, and no transport/session boundary exists yet |
+| SIWE nonce, plaintext, signature, and browser credentials | Captured material may replay a proof, hijack a session, or correlate an address | 128-bit server nonce; 256-bit flow/session/CSRF secrets; exact origin/URI/chain/statement/time; ERC-191 recovery; durable one-way challenge/flow use; hashed credentials; strict `__Host-` cookies; rotation; CSRF logout; generic failures; redacted strings. SQLite stores no plaintext message, signature, or raw bearer token |
 | Chain, contract, and code-hash configuration | Wrong-chain execution or incorrect credit | Local syntax checks, chain/address/runtime matching, and Week 8 per-batch chain/Router policy exist; startup, trusted-block, and RPC-switch controls remain Gate B work |
 | Payment intents, observations, checkpoints, ledger, finality, reconciliation reports, and transaction lifecycle rows | Duplicate value movement, stale qualification, lost entries, or unexplained differences | Separate strict schemas; atomic watermarked reads; exact caught-up snapshots; append-only histories; policy/source/unsigned fingerprints; linked reversals; strict retry verification; protocol finality, token delivery, balances, and tamper evidence remain Gates B/C/D |
 | CI token and workflow | Repository or release-chain modification | Read-only permission, pinned Actions, and no persisted checkout credential |
@@ -97,6 +97,10 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 15. A transaction operation must be durable before broadcast; an unknown result may only resend the same stored signed bytes, and a replacement may change fees but not chain, signer, nonce, destination, gas, value, or calldata.
 16. Concrete signed bytes must round-trip to the approved type, hash, chain, signer, nonce, destination, fees, gas, zero value, access list, and calldata before broadcast.
 17. A SIWE proof must match the configured relying party and exact issued challenge, recover the named EOA, remain unexpired, and consume its nonce atomically once; it must never authorize a payment or become a session by implication.
+18. A browser session may be created only after the flow cookie is bound to the
+    exact nonce and the SIWE proof succeeds; raw bearer/CSRF tokens must not be
+    stored, replacement must not revoke the old session without creating the
+    new one, and logout must require the session's matching CSRF cookie/header.
 
 ## 6. Risk Register
 
@@ -114,9 +118,9 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 | S08 | Retry, concurrent nonce use, or unknown broadcast causes double payment | Medium | High | Week 7 deduplicates intents; Week 13 transactionally reserves shared-file nonces, persists raw/hash before broadcast, reuses exact bytes after unknown results, makes accepted evidence dominant, and restricts replacements to the same nonce/payment facts; Week 14 proves that path against real Anvil acceptance, duplicate import, replacement, receipt, and balances; cross-host coordination remains | Partly controlled | Gates B/D |
 | S09 | SQLite data is modified and effects or transaction attempts become unexplainable | Medium | Medium | Versioned migrations, `STRICT`/`CHECK`/foreign-key/trigger constraints, append-only identities, linked reversals, evidence copies, source/policy/unsigned fingerprints, raw Keccak recomputation, and strict replay verification exist; backup, encryption, independent tamper evidence, and finalized balances remain | Partly controlled | Gates C/D |
 | S10 | Secret scanning exits successfully while its rules are ineffective | Low | High | Fixed scanner version plus a dynamic canary with a dedicated expected exit code | Controlled | Gate A |
-| S11 | An authentication or typed-data signature is replayed across relying parties, users, chains, or contracts | Medium | High | Week 15 fixes SIWE origin/URI/statement/chain/time, nonce, canonical message, and ERC-191 recovery; Week 16 adds restart-safe SQLite consumption, shared-file concurrency, immutable issued facts, and database-owned capacity; browser/session binding, cross-host coordination, and separate EIP-712/permit controls remain | Partly controlled | Gate E |
+| S11 | An authentication or typed-data signature is replayed across relying parties, users, chains, browser contexts, or contracts | Medium | High | Weeks 15-16 fix SIWE origin/URI/statement/chain/time, nonce, canonical recovery, restart-safe consumption, and shared-file concurrency. Week 17 adds hashed browser binding, exact HTTP Origin, opaque session rotation, CSRF logout, one-way revocation, and restart tests. Cross-host coordination, rate limiting, production browser hosting, ERC-1271, and separate EIP-712/permit controls remain | Partly controlled | Gate E |
 | S12 | A testnet RPC fails, test funds disappear, or test data is public | High | Low | Assign no value to test funds, store no customer data, and use Anvil for daily work | Accepted | Ongoing |
-| S13 | Unauthenticated API traffic grows the database, creates lock pressure, crosses tenants, or bypasses idempotency through separate files | High | High | 16 KiB body limit, bounded keys, shared-file unique constraint, restart tests, loopback-only documentation, and non-leaking conflicts; auth, tenant scoping, quotas, rate limits, expiry, and cross-host storage remain | Partly controlled | Gate B |
+| S13 | API traffic grows databases, creates lock pressure, crosses tenants, or bypasses idempotency/session state through separate files | High | High | 16 KiB body limit, bounded keys/challenges/sessions, shared-file constraints, restart tests, loopback-only authentication, exact Origin, generic failures, and expiry exist. Payment Intents remain unauthorized; tenant scoping, quotas, rate limits, public hosting controls, and cross-host storage remain | Partly controlled | Gate B |
 | S14 | A locally consistent reconciliation report is mistaken for settlement and triggers value movement | Medium | High | Multidimensional discrepancy model, immutable source coordinates/evidence, no source mutation or payout API, explicit `IsConsistent` boundary documentation, and reorg report-history test; accounting and authorization remain separate future controls | Partly controlled | Gate C |
 
 ## 7. Secret-Scanning Boundary
@@ -148,7 +152,7 @@ If real funds, customer data, or an unclear jurisdiction is involved, stop immed
 Review and version this document again no later than the first of these events:
 
 - The first Sepolia deployment or signing path is introduced.
-- Protocol-native finality, token-delivery evidence, accounting, a public-network/imported-key signer or broadcaster, an HTTP/session SIWE path, or an API exposed beyond loopback becomes runnable.
+- Protocol-native finality, token-delivery evidence, accounting, a public-network/imported-key signer or broadcaster, production SIWE/browser hosting, authorization, or an API exposed beyond loopback becomes runnable.
 - KMS, cloud hosting, a new RPC, another chain, or a third-party webhook is added.
 - A secret-scan finding, supply-chain event, reorg failure, or funds anomaly occurs.
 - Gate F release review starts.

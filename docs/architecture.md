@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 16, including the accepted Gate A baseline; and
+1. the implementation through Week 17, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 16
+## Implemented architecture through Week 17
 
 ```mermaid
 flowchart LR
@@ -18,11 +18,12 @@ flowchart LR
     Build --> Domain[PaymentSandbox.Domain]
     Domain --> DomainTests[Domain tests<br/>xUnit v3 + MTP]
     Domain --> Authentication[PaymentSandbox.Authentication<br/>strict EOA SIWE]
-    Authentication --> ChallengeDb[(SQLite issued/consumed challenges<br/>owned migration + capacity)]
+    Authentication --> ChallengeDb[(SQLite challenge + browser session state<br/>owned migrations + capacities)]
     Authentication -. reference adapter .-> ChallengeMemory[(Bounded in-memory<br/>one-time challenges)]
-    Authentication --> AuthenticationTests[Canonical + ERC-191 + SQLite<br/>restart/replay/concurrency tests]
+    Authentication --> AuthenticationTests[Canonical + ERC-191 + SQLite<br/>session/restart/replay/concurrency tests]
     Domain --> API[PaymentSandbox.Api]
     Client[Loopback HTTP client] --> API
+    API --> Authentication
     API --> SQLite[(SQLite intent store)]
     Migration[Versioned schema migration] --> SQLite
     API --> APITests[Real Kestrel + SQLite tests]
@@ -123,8 +124,16 @@ Week 16 adds a dedicated SQLite implementation behind the same store interface.
 An owned `STRICT` migration persists issued/consumed state, pins one shared
 capacity, and permits only a one-way consumption update. Immediate transactions
 coordinate local processes sharing the file, including after restart. It stores
-no wallet address, message, or signature. There is still no HTTP endpoint,
-browser binding, session, ERC-1271 path, user/tenant model, or role decision.
+no wallet address, message, or signature.
+
+Week 17 adds a loopback HTTP composition boundary. Challenge delivery is bound
+to a separately generated HttpOnly flow secret; successful proof creates
+opaque session and CSRF credentials whose hashes are durable in migration 2.
+State-changing requests require the exact configured HTTPS Origin. Relogin
+atomically replaces an optional prior session, and logout requires matching
+CSRF cookie/header values before one-way revocation. This creates a bounded
+login identity, not a user, role, tenant, payment permission, ERC-1271 path, or
+public authentication service.
 
 ### Transaction lifecycle boundary
 
@@ -205,8 +214,10 @@ tables. Unknown future versions or mismatched known migration names fail startup
 The default database survives process restart, and processes using the same
 local file share its idempotency constraint. This is not cross-host horizontal
 scaling, database encryption, backup, tamper evidence, or disaster recovery.
-There is still no authentication, authorization, tenant boundary, rate limiting,
-expiry, capacity control, or production hosting configuration.
+The Payment Intent endpoints still have no authorization or tenant boundary;
+the new SIWE session is intentionally not consulted by them. There is also no
+rate limiting, Intent expiry/capacity control, or production hosting
+configuration.
 
 ### Chain observation boundary
 
@@ -382,9 +393,9 @@ flowchart LR
     API -. watermarked Intent .-> Reconcile
     Ledger -. watermarked payment effects .-> Reconcile
 
-    Client -. wallet login proof .-> Authentication[Bounded SIWE verification]
-    Authentication --> ChallengeStore[(Current: SQLite durable challenge state<br/>local shared-file coordination)]
-    Authentication -. future session only .-> Session[Planned session boundary]
+    Client -. wallet login proof .-> Authentication[Loopback SIWE + opaque session]
+    Authentication --> ChallengeStore[(SQLite challenge/flow/session state<br/>local shared-file coordination)]
+    Authentication --> Session[Current bounded session identity<br/>not payment authorization]
 
     Orchestrator[Test-only transaction lifecycle] --> LifecycleDb[(Append-only lifecycle DB)]
     Orchestrator --> Signer[Implemented ephemeral Anvil signer<br/>no imported key]
@@ -404,9 +415,9 @@ controls.
 | Component                     | Owns                                                                              | Must not own                                                                 |
 | ----------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `PaymentSandbox.Domain`       | Value objects, states, invariants, policy inputs                                  | RPC, SQL, HTTP, signing, environment configuration                           |
-| `PaymentSandbox.Authentication` | Canonical SIWE challenges, EOA recovery, and one-time nonce consumption         | Sessions, roles, payment authority, ERC-1271 RPC, or user custody            |
+| `PaymentSandbox.Authentication` | Canonical SIWE challenges, EOA recovery, browser-flow binding, opaque sessions, rotation, and revocation | Roles, tenants, payment authority, ERC-1271 RPC, or user custody |
 | `PaymentSandbox.Contracts`    | Typed ABI messages, chain/code identity checks, unsigned local calldata            | Business settlement decisions, private keys, signing or broadcasting          |
-| `PaymentSandbox.Api`          | Payment intent use cases, validation, idempotent HTTP boundary                    | Chain history truth, direct key material                                     |
+| `PaymentSandbox.Api`          | Payment Intent HTTP plus loopback SIWE origin/cookie/session composition          | Authorization policy, chain history truth, direct key material                |
 | `PaymentSandbox.Indexer`      | Bounded exact-range block/log observations and atomic restart checkpoints          | Settlement, finality claims, mutating chain state, overwriting fork history  |
 | `PaymentSandbox.Ledger`       | Provisional occurrence effects, linked reversals, and a durable source cursor       | Finality, balances, payouts, Intent mutation, or source-history mutation     |
 | `PaymentSandbox.Finality`     | Reversible confirmation qualification over exact caught-up source snapshots         | Protocol irreversibility, settlement, balances, payouts, or source mutation |
@@ -436,8 +447,9 @@ effect/reversal history, reversible confirmation-depth qualification, and
 append-only explainable reconciliation reports, and a durable exact-retry
 transaction lifecycle plus one ephemeral Anvil signer/RPC verification path. It does not implement
 protocol-native finality, token-delivery proof, balances, payout authorization,
-off-chain settlement, or an authenticated/authorized public service. The SIWE
-result is deliberately not a session.
+off-chain settlement, or an authenticated/authorized public service. A SIWE
+proof can now create a bounded local session, but that session grants no role or
+payment authority.
 
 ## Trust boundaries
 
@@ -448,6 +460,8 @@ Current and future code must treat the following as untrusted input:
 - Contract addresses, expected code hashes, and chain IDs are untrusted configuration until syntactically validated; RPC observations remain untrusted even after they match that policy.
 - Wallet signatures until domain, nonce, time, chain, and signer checks pass.
 - SIWE text, signatures, and nonces until canonical format, configured relying-party facts, ERC-191 recovery, expiry, exact issued challenge, and atomic one-time consumption all pass.
+- Browser flow/session/CSRF cookies and Origin headers until exact shape,
+  uniqueness, configured-origin, expiry, hash lookup, and revocation checks pass.
 - Database state that cannot be traced to a migration and source observation.
 - Any secret found in source control; committing a key makes it compromised, not merely misplaced.
 
@@ -466,7 +480,9 @@ duplicate/replacement/balance evidence without a configured secret. Week 15 uses
 generated EOA keys and a mutable test clock to exercise strict SIWE parsing and
 recovery. Week 16 adds temporary SQLite files to prove migration, restart, exact
 expiry, immutable facts, database-owned capacity, and 24-way cross-instance
-replay concurrency without HTTP or an external identity provider; see [Threat
+replay concurrency without an external identity provider. Week 17 adds real
+loopback Kestrel tests for exact Origin, hardened cookies, browser binding,
+restart-safe session lookup, rotation, CSRF logout, and expiry; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary

@@ -372,6 +372,16 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.11, )",
+          "PaymentSandbox.Authentication": "[1.0.0, )",
+          "PaymentSandbox.Domain": "[1.0.0, )"
+        }
+      },
+      "paymentsandbox.authentication": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.11, )",
+          "Nethereum.Signer": "[6.1.0, )",
+          "Newtonsoft.Json": "[13.0.4, )",
           "PaymentSandbox.Domain": "[1.0.0, )"
         }
       },

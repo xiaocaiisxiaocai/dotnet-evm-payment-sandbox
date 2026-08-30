@@ -8,9 +8,10 @@
   <ItemGroup>
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
 
-    <!-- SIWE recovery needs only the signing package; keep it scoped to Authentication. -->
+    <!-- SIWE recovery and generated-key HTTP tests need only the signing package. -->
     <PackageVersion Include="Nethereum.Signer" Version="6.1.0"
-                    Condition="'$(MSBuildProjectName)' == 'PaymentSandbox.Authentication' Or
+                    Condition="'$(MSBuildProjectName)' == 'PaymentSandbox.Api.Tests' Or
+                               '$(MSBuildProjectName)' == 'PaymentSandbox.Authentication' Or
                                '$(MSBuildProjectName)' == 'PaymentSandbox.Authentication.Tests'" />
     <!-- Contract RPC access uses the full Web3 package. Domain remains dependency-free. -->
     <PackageVersion Include="Nethereum.Web3" Version="6.1.0" />

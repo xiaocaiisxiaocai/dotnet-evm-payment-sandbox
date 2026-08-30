@@ -58,7 +58,7 @@ public sealed class SqliteSiweChallengeStoreTests
 
         await using SqliteConnection connection = await first.OpenConnectionAsync(
             TestContext.Current.CancellationToken);
-        Assert.Equal(1, await CountAsync(connection, "schema_migrations"));
+        Assert.Equal(2, await CountAsync(connection, "schema_migrations"));
     }
 
     [Fact]
@@ -267,7 +267,7 @@ public sealed class SqliteSiweChallengeStoreTests
             command.CommandText =
                 """
                 INSERT INTO schema_migrations (version, name, applied_at_utc)
-                VALUES (2, 'future', '2026-08-30T00:00:00.0000000+00:00');
+                VALUES (3, 'future', '2026-08-30T00:00:00.0000000+00:00');
                 """;
             await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
@@ -292,6 +292,22 @@ public sealed class SqliteSiweChallengeStoreTests
                 .InitializeAsync(TestContext.Current.CancellationToken));
 
         Assert.Contains("database-owned capacity", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_RejectsSessionCapacityMismatchAcrossInstances()
+    {
+        await using var temporary = new TemporarySiweChallengeDatabase();
+        var clock = new MutableTimeProvider(AuthenticationTestData.StartTime);
+        await CreateDatabase(temporary, clock, sessionCapacity: 10)
+            .InitializeAsync(TestContext.Current.CancellationToken);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CreateDatabase(temporary, clock, sessionCapacity: 11)
+                .InitializeAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("challenge or session capacity", exception.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -321,8 +337,14 @@ public sealed class SqliteSiweChallengeStoreTests
     private static SiweChallengeDatabase CreateDatabase(
         TemporarySiweChallengeDatabase temporary,
         TimeProvider clock,
-        int capacity = 1_024) =>
-        new(new SiweChallengeDatabaseOptions(temporary.DatabasePath, capacity), clock);
+        int capacity = 1_024,
+        int sessionCapacity = 1_024) =>
+        new(
+            new SiweChallengeDatabaseOptions(
+                temporary.DatabasePath,
+                capacity,
+                sessionCapacity),
+            clock);
 
     private static SiweAuthenticationService CreateService(
         TemporarySiweChallengeDatabase temporary,

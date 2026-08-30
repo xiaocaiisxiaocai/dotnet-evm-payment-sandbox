@@ -16,9 +16,12 @@ internal sealed class TemporarySqliteDatabase : IAsyncDisposable
             $"{DirectoryPrefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(_temporaryRoot);
         DatabasePath = Path.Combine(_temporaryRoot, "payment-intents.db");
+        AuthenticationDatabasePath = Path.Combine(_temporaryRoot, "authentication.db");
     }
 
     public string DatabasePath { get; }
+
+    public string AuthenticationDatabasePath { get; }
 
     public ValueTask DisposeAsync()
     {
