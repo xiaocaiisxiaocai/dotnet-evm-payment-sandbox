@@ -14,7 +14,9 @@ namespace PaymentSandbox.Permits.Erc2612;
 /// <summary>Builds and verifies one strict ERC-2612 EIP-712 subset.</summary>
 /// <remarks>
 /// This service never signs, reads a private key, or fetches a token nonce. The
-/// caller must supply a reviewed current nonce; Week 19 will add chain preflight.
+/// caller must supply a reviewed current nonce. The preflight/workflow layer can
+/// obtain and durably reserve that nonce; keeping this primitive pure makes its
+/// EIP-712 output deterministic and independently testable.
 /// </remarks>
 public sealed class Erc2612PermitService
 {
@@ -38,6 +40,19 @@ public sealed class Erc2612PermitService
     {
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
+
+    /// <summary>Returns the reviewed token domain hash used by every draft.</summary>
+    public static string CalculateDomainSeparator(Erc2612PermitPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        byte[] separator = HashAbiWords(
+            KeccakUtf8(DomainType),
+            KeccakUtf8(policy.TokenName),
+            KeccakUtf8(policy.TokenVersion),
+            EncodeUint256(policy.ChainId.Value),
+            EncodeAddress(policy.Token));
+        return $"0x{Convert.ToHexStringLower(separator)}";
     }
 
     /// <summary>
@@ -68,12 +83,8 @@ public sealed class Erc2612PermitService
         BigInteger deadlineSeconds = new(deadline.ToUnixTimeSeconds());
         ValidateUint256(deadlineSeconds, nameof(deadline));
 
-        byte[] domainSeparator = HashAbiWords(
-            KeccakUtf8(DomainType),
-            KeccakUtf8(_policy.TokenName),
-            KeccakUtf8(_policy.TokenVersion),
-            EncodeUint256(_policy.ChainId.Value),
-            EncodeAddress(_policy.Token));
+        byte[] domainSeparator = Convert.FromHexString(
+            CalculateDomainSeparator(_policy).AsSpan(2));
         byte[] structHash = HashAbiWords(
             KeccakUtf8(PermitType),
             EncodeAddress(owner),
