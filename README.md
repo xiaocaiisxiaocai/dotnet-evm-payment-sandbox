@@ -405,8 +405,10 @@ tests, the 1,030-byte/zero-slot Router baseline, and deployment plus the signed
 Anvil lifecycle from 1,249 tracked files passed. The dynamic canary and
 working-tree/complete 38-commit history scans found no leaks. Implementation
 commit [`772d83c`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/772d83c)
-records the durable SIWE boundary; remote CI evidence is added after GitHub
-Actions completes.
+records the durable SIWE boundary. GitHub Actions run
+[`33300425392`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33300425392)
+independently passed locked .NET, Foundry plus signed RPC replay, and secret-scan
+jobs.
 
 The 2026-08-30 Week 15 committed-snapshot verification passed 272/272 .NET
 tests, including 37/37 focused Authentication tests. All 36 unchanged Foundry
