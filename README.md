@@ -312,7 +312,9 @@ observation replay from 1,177 Git-known files also passed. The dynamic secret
 canary and working-tree/full-history scans passed across the complete 26-commit
 history. Implementation commit
 [`cb1131b`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb1131b)
-records the Week 12 boundary.
+records the Week 12 boundary. GitHub Actions run
+[`33289914693`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33289914693)
+passed its locked .NET, Foundry/RPC, and secret-scan jobs.
 
 ## Architecture rules
 

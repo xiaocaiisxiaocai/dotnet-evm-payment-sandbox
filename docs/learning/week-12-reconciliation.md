@@ -287,7 +287,10 @@ baseline, and successful/reverted Anvil observation replay from 1,177 Git-known
 files. The dynamic secret canary, candidate working-tree scan, and complete
 26-commit history scan found no leaks. Implementation commit
 [`cb1131b`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb1131b)
-records the boundary verified here.
+records the boundary verified here. GitHub Actions run
+[`33289914693`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33289914693)
+then passed all three jobs: locked .NET build/tests, Foundry build/tests/RPC
+observation, and working-rules/full-history secret scan.
 
 ## What remains for Week 13 and later
 
