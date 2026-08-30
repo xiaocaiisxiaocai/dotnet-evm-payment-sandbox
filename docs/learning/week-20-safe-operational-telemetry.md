@@ -185,3 +185,15 @@ or request bodies into telemetry.
 Week 21 should use this stable signal surface while adding deterministic fault
 injection and recovery tests. It should not broaden the tag allowlist merely to
 make a fault easier to debug.
+
+## 9. Local committed-snapshot evidence
+
+On 2026-08-30, the clean committed implementation snapshot `8b136b4` passed
+339/339 .NET tests, including 4/4 focused Observability, 43/43 Orchestrator, and
+32/32 Permit tests. The unchanged contract suite passed 36/36 Foundry tests and
+the reviewed Router remained 1,030 runtime bytes with zero storage slots.
+
+The isolated deployment and signed Anvil lifecycle replay passed from 1,306
+tracked files. The dynamic secret canary, current working tree, and complete
+50-commit history scans found no leaks. Remote CI evidence is linked separately
+after the documentation commit receives an independent run.
