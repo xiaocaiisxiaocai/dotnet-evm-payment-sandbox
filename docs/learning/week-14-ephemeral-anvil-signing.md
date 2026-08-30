@@ -134,8 +134,14 @@ timeouts. The clean Anvil replay supplies real acceptance, duplicate import,
 same-nonce replacement, receipt, and balance evidence on every supported local
 and CI verification run.
 
-Final committed-snapshot counts and CI links are recorded after the milestone
-commit passes the complete verification path.
+The 2026-08-30 committed-snapshot verification of implementation commit
+`e3ec705` passed 235/235 .NET tests, including 42/42 focused Orchestrator tests.
+It also passed all 36 unchanged Foundry tests, the reviewed
+1,030-byte/zero-storage-slot Router baseline, and a clean deployment plus Week
+14 signed lifecycle from 1,221 Git-known files. The dynamic secret canary,
+candidate-tree scan, and complete 32-commit history scan found no leaks. The
+remote CI link is appended only after GitHub has independently run the pushed
+commits.
 
 ## Suggested reading order
 

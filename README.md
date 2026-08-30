@@ -362,6 +362,15 @@ commit `60f88c1` records this code boundary. GitHub Actions run
 [`33293499164`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33293499164)
 passed the locked .NET, Foundry/RPC observation, and secret-scan jobs.
 
+The 2026-08-30 Week 14 committed-snapshot verification passed 235/235 .NET
+tests, including 42/42 focused Orchestrator tests. All 36 unchanged Foundry
+tests, the 1,030-byte/zero-slot Router baseline, and deployment plus the signed
+unknown/replacement lifecycle from 1,221 Git-known files passed. The generated
+key and signed raw bytes were not printed; the dynamic canary and
+candidate-tree/complete 32-commit history scans found no leaks. Implementation
+commit `e3ec705` records the verified code boundary. Remote CI evidence is added
+only after GitHub independently verifies the pushed commits.
+
 ## Architecture rules
 
 - Domain code owns business meaning and invariants, not infrastructure concerns.
