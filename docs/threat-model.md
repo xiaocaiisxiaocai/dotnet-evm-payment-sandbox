@@ -1,6 +1,6 @@
 # Threat Model v1
 
-- Status: Week 13 bounded transaction-lifecycle update to the Week 1 security baseline
+- Status: Week 14 ephemeral Anvil signing update to the Week 1 security baseline
 - Last updated: 2026-08-30
 - Owner: repository maintainer
 
@@ -16,7 +16,7 @@ The current model covers:
 - The GitHub repository and read-only GitHub Actions workflows.
 - The .NET solution and the test-only PaymentRouter/TestUSDC implementation, including the typed contract adapter, runnable SQLite-backed Payment Intent API, bounded chain-observation/checkpoint library, provisional reversible ledger, reversible confirmation qualification, explainable reconciliation reports, test-only transaction lifecycle, identity checks, permit, fuzz, invariant, and local deployment tests.
 - Local Anvil, plus one later smoke test on Ethereum Sepolia.
-- Protocol-native finality, token-delivery proof, accounting, a real signer/RPC adapter, and SIWE components planned for later gates.
+- Protocol-native finality, token-delivery proof, accounting, production/public-network signer and RPC adapters, and SIWE components planned for later gates.
 
 The following are explicitly out of scope:
 
@@ -45,7 +45,7 @@ Payer -> Anvil/Sepolia -> untrusted RPC -> bounded Indexer batch -> local SQLite
 Indexer transition log -> provisional Ledger effects/reversals -> separate local SQLite checkpoint
 Indexer head snapshot + caught-up Ledger -> reversible confirmation qualification
 Intent + caught-up Ledger/Finality snapshots -> append-only explainable reconciliation
-Test signing request -> Orchestrator -> planned isolated test wallet -> Anvil/Sepolia
+Test signing request -> Orchestrator -> ephemeral process-local wallet -> loopback Anvil
 ```
 
 Boundary assumptions:
@@ -55,7 +55,7 @@ Boundary assumptions:
 - Ledger input is derived from the local Indexer, not from an independent truth source. Week 10 consumes only committed transition IDs, bounds transitions/payments, preserves exact occurrence identity, appends linked reversals, and atomically advances its own source checkpoint. This contains duplicate/lost local effects but does not make a dishonest or incomplete RPC observation true.
 - Finality input is still derived from the same local RPC observation path. Week 11 atomically pairs the Indexer head with its transition watermark, requires Ledger to be exactly caught up, requires the exact Ledger entry high-watermark, and appends reversible threshold decisions. This prevents known-but-unconsumed local reversals from being qualified; it does not prove provider honesty, log completeness, consensus finalization, or economic irreversibility.
 - Reconciliation compares only locally derived facts. Week 12 atomically watermarks Intent, Ledger, and Finality reads; requires exact cross-source catch-up; bounds per-payment histories; and appends complete evidence plus stable discrepancy codes. This makes partial, duplicate, mismatched, and reversed histories explainable, but a consistent report is not token delivery, protocol finality, accounting credit, or permission to settle.
-- Orchestrator adapters are untrusted side-effect boundaries. Week 13 allowlists only Anvil/Sepolia, binds one verified Router and signer policy, persists before broadcast, repeats exact signed bytes after an unknown result, and recomputes durable raw/unsigned identities before reuse. It still has no real signer and does not yet decode/recover arbitrary signer output.
+- Orchestrator adapters are untrusted side-effect boundaries. Week 13 allowlists only Anvil/Sepolia, binds one verified Router and signer policy, persists before broadcast, repeats exact signed bytes after an unknown result, and recomputes durable raw/unsigned identities before reuse. Week 14 adds a concrete generated-key path that is narrower than the general policy: credential-free loopback HTTP, an Anvil client, chain `31337`, reviewed Router runtime, canonical type-2 re-encoding, exact unsigned-field comparison, and recovered-signer matching before broadcast. There is still no imported key, Sepolia adapter, hosted worker, or production key provider.
 - HTTP bodies and headers are untrusted. Week 6 validates exact integer/address shapes, requires a bounded idempotency key, caps request bodies at 16 KiB, and returns non-leaking conflicts. The API has no identity or tenant boundary and must remain loopback/test-only.
 - Database paths are operator-controlled configuration. Week 7 resolves one absolute path, runs known migrations before listening, rejects future schema versions, and uses parameterized SQL. A local database file remains mutable, unencrypted application data rather than a trust anchor.
 - Pull-request code is untrusted input. CI has no deployment key, does not use `pull_request_target`, retains no checkout credentials, and receives only `contents: read` permission.
@@ -65,9 +65,9 @@ Boundary assumptions:
 
 | Asset | Consequence if compromised | Current treatment |
 | --- | --- | --- |
-| Test-wallet private key or mnemonic | Unauthorized signatures and loss of test assets | Never committed, passed to CI, or logged; Sepolia uses an isolated burner |
+| Test-wallet private key or mnemonic | Unauthorized signatures and loss of test assets | Week 14 generates an Anvil-only key inside the process, never imports/returns/logs/persists it, and best-effort zeroes the owned byte array; future Sepolia uses a separate isolated burner |
 | Credential-bearing RPC URL | Quota theft and activity disclosure | Stored only in ignored local configuration; examples contain no credential |
-| Signed raw transaction | Can be replayed while valid | Week 13 stores it only in the local unencrypted lifecycle database for exact retry; snapshots, strings, and boundary exceptions redact it; no real signer exists yet |
+| Signed raw transaction | Can be replayed while valid | Stored only in the local unencrypted lifecycle database for exact retry; snapshots, strings, boundary exceptions, and Week 14 harness output redact it; clean replay deletes its temporary database |
 | Chain, contract, and code-hash configuration | Wrong-chain execution or incorrect credit | Local syntax checks, chain/address/runtime matching, and Week 8 per-batch chain/Router policy exist; startup, trusted-block, and RPC-switch controls remain Gate B work |
 | Payment intents, observations, checkpoints, ledger, finality, reconciliation reports, and transaction lifecycle rows | Duplicate value movement, stale qualification, lost entries, or unexplained differences | Separate strict schemas; atomic watermarked reads; exact caught-up snapshots; append-only histories; policy/source/unsigned fingerprints; linked reversals; strict retry verification; protocol finality, token delivery, balances, and tamper evidence remain Gates B/C/D |
 | CI token and workflow | Repository or release-chain modification | Read-only permission, pinned Actions, and no persisted checkout credential |
@@ -78,7 +78,7 @@ Boundary assumptions:
 Breaking any invariant requires the experiment to stop until it is investigated:
 
 1. A production or mainnet key must never enter this repository, CI, logs, or test fixtures.
-2. CI must not hold signing material or deploy contracts or funds.
+2. CI must not receive or persist signing secrets or deploy to a public network; its only key is generated in memory for a disposable Anvil process.
 3. Anvil default accounts are local-only. Their keys are public and must never receive funds on a public network.
 4. The only allowed public network is Sepolia. Deployment and signing entry points must reject chain ID `1`.
 5. On-chain amounts use exact integer base units, never floating-point storage.
@@ -92,6 +92,7 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 13. Confirmation qualification must bind an exact Indexer snapshot to a fully caught-up Ledger cursor; qualification and later revocation are append-only policy evidence and must never be presented as protocol finality or settlement.
 14. Reconciliation must bind exact Intent, Ledger, and Finality snapshots; a locally consistent report must never be presented as token delivery, accounting credit, payout authorization, or settlement.
 15. A transaction operation must be durable before broadcast; an unknown result may only resend the same stored signed bytes, and a replacement may change fees but not chain, signer, nonce, destination, gas, value, or calldata.
+16. Concrete signed bytes must round-trip to the approved type, hash, chain, signer, nonce, destination, fees, gas, zero value, access list, and calldata before broadcast.
 
 ## 6. Risk Register
 
@@ -99,14 +100,14 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 
 | ID | Threat and impact | Likelihood | Impact | Control | Status | Target |
 | --- | --- | --- | --- | --- | --- | --- |
-| S01 | A key, signed transaction, or credential enters source, history, logs, or exception output | Medium | High | Ignore rules, working-tree/history scans, canary, redacted signed-payload strings, and sanitized adapter-boundary exceptions; local lifecycle DB remains sensitive and unencrypted | Partly controlled | Gates A/D |
+| S01 | A key, signed transaction, or credential enters source, history, logs, or exception output | Medium | High | Ignore rules, working-tree/history scans, canary, redacted signed-payload strings, sanitized adapter-boundary exceptions, and a non-exporting generated Anvil key with best-effort zeroing; local lifecycle DB remains sensitive and unencrypted | Partly controlled | Gates A/D |
 | S02 | A movable Action tag or replaced archive executes malicious build code | Low | High | Full Action commit SHAs; Foundry and Gitleaks archives use platform-specific SHA-256 | Controlled | Gate A |
 | S03 | A pull request abuses a privileged token or secret | Medium | High | Read-only token, no persisted credential, no CI secret, no `pull_request_target` | Controlled | Gate A |
 | S04 | A public Anvil default key is reused on Sepolia or mainnet | Medium | High | Explicit local-only boundary and a separate Sepolia burner | Controlled | Gate A |
 | S05 | A malicious or incorrect RPC reports the wrong chain or contract state | Medium | High | Week 5 checks chain/address/runtime identity; Week 8 checks exact ranges, block identity/parents, emitter and event occurrence fields; trusted-block and independent-provider checks remain | Partly controlled | Gate B |
-| S06 | Configuration error deploys or signs on an unintended network | Low | High | `DeployLocal` fails closed outside `31337`; Week 13 lifecycle policy allows only `31337` or `11155111` and composes only with the same verified Router identity; a real signer adapter remains absent | Partly controlled | Gates A/B/D |
+| S06 | Configuration error deploys or signs on an unintended network | Low | High | `DeployLocal` fails closed outside `31337`; the lifecycle policy allows only `31337` or `11155111`; the concrete generated-key/RPC adapter further requires credential-free loopback Anvil `31337`, its own signer, and the verified Router identity | Partly controlled | Gates A/B/D |
 | S07 | Reorg, truncated logs, or incorrect finality causes false credit | Medium | High | Weeks 8-9 retain exact fork/canonicality history; Week 10 appends provisional reversals; Week 11 appends caught-up qualification/revocation; Week 12 appends a new discrepancy report after those changes; independent completeness checks, protocol finality, and authorization remain | Partly controlled | Gates B/C |
-| S08 | Retry, concurrent nonce use, or unknown broadcast causes double payment | Medium | High | Week 7 deduplicates intents; Week 13 transactionally reserves shared-file nonces, persists raw/hash before broadcast, reuses exact bytes after unknown results, makes accepted evidence dominant, and restricts replacements to the same nonce/payment facts; cross-host coordination and real-adapter integration remain | Partly controlled | Gates B/D |
+| S08 | Retry, concurrent nonce use, or unknown broadcast causes double payment | Medium | High | Week 7 deduplicates intents; Week 13 transactionally reserves shared-file nonces, persists raw/hash before broadcast, reuses exact bytes after unknown results, makes accepted evidence dominant, and restricts replacements to the same nonce/payment facts; Week 14 proves that path against real Anvil acceptance, duplicate import, replacement, receipt, and balances; cross-host coordination remains | Partly controlled | Gates B/D |
 | S09 | SQLite data is modified and effects or transaction attempts become unexplainable | Medium | Medium | Versioned migrations, `STRICT`/`CHECK`/foreign-key/trigger constraints, append-only identities, linked reversals, evidence copies, source/policy/unsigned fingerprints, raw Keccak recomputation, and strict replay verification exist; backup, encryption, independent tamper evidence, and finalized balances remain | Partly controlled | Gates C/D |
 | S10 | Secret scanning exits successfully while its rules are ineffective | Low | High | Fixed scanner version plus a dynamic canary with a dedicated expected exit code | Controlled | Gate A |
 | S11 | Typed-data authorization is replayed across users, chains, or contracts | Medium | High | Domain, chain ID, verifying contract, nonce, deadline, and concurrent-consumption tests | Planned | Gate E |
@@ -143,7 +144,7 @@ If real funds, customer data, or an unclear jurisdiction is involved, stop immed
 Review and version this document again no later than the first of these events:
 
 - The first Sepolia deployment or signing path is introduced.
-- Protocol-native finality, token-delivery evidence, accounting, or a real signer/broadcaster becomes runnable, or the API is exposed beyond loopback.
+- Protocol-native finality, token-delivery evidence, accounting, a public-network/imported-key signer or broadcaster, or an API exposed beyond loopback becomes runnable.
 - KMS, cloud hosting, a new RPC, another chain, or a third-party webhook is added.
 - A secret-scan finding, supply-chain event, reorg failure, or funds anomaly occurs.
 - Gate F release review starts.

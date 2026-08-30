@@ -108,12 +108,26 @@ jobs:
         working-directory: contracts
         run: forge test -vvv
 
+      - name: Install exact .NET SDK for signed RPC verification
+        # Week 14 runs a real ephemeral-key EIP-1559 lifecycle against Anvil.
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: 10.0.400
+
+      - name: Build signed Anvil verification harness
+        run: |
+          dotnet restore tests/PaymentSandbox.Orchestrator.Anvil/PaymentSandbox.Orchestrator.Anvil.csproj --locked-mode
+          dotnet build tests/PaymentSandbox.Orchestrator.Anvil/PaymentSandbox.Orchestrator.Anvil.csproj --configuration Release --no-restore
+
       - name: Replay deployment and observation from clean tracked source
         # The wrapper excludes workspace artifacts; its observer owns Anvil,
         # bounds waits, and fails CI if teardown cannot be confirmed.
         shell: pwsh
         timeout-minutes: 5
-        run: ./scripts/verify-clean-contract-deployment.ps1 -Port 18545
+        run: >-
+          ./scripts/verify-clean-contract-deployment.ps1
+          -Port 18545
+          -OrchestratorHarnessDll ./tests/PaymentSandbox.Orchestrator.Anvil/bin/Release/net10.0/PaymentSandbox.Orchestrator.Anvil.dll
 
   secrets:
     name: Secret scan (working rules and full history)

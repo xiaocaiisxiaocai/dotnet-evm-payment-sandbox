@@ -21,6 +21,7 @@ $solutionPath = Join-Path $repositoryRoot 'PaymentSandbox.slnx'
 $contractsDirectory = Join-Path $repositoryRoot 'contracts'
 $contractBaselineScript = Join-Path $PSScriptRoot 'verify-contract-baseline.ps1'
 $cleanContractDeploymentScript = Join-Path $PSScriptRoot 'verify-clean-contract-deployment.ps1'
+$orchestratorHarnessDll = Join-Path $repositoryRoot 'tests/PaymentSandbox.Orchestrator.Anvil/bin/Release/net10.0/PaymentSandbox.Orchestrator.Anvil.dll'
 $gitleaksVersion = '8.29.1'
 $runtime = [System.Runtime.InteropServices.RuntimeInformation]
 $runningOnWindows = $runtime::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
@@ -340,7 +341,9 @@ Invoke-NativeChecked -FilePath $forgePath -Arguments @('test', '-vvv') -WorkingD
 Write-Step 'Replay deployment and transaction observation from a clean tracked-source snapshot'
 # The wrapper copies only Git-known source, then delegates bounded Anvil
 # lifecycle and teardown checks to the Week 2 observer.
-& $cleanContractDeploymentScript -Port 18545
+& $cleanContractDeploymentScript `
+    -Port 18545 `
+    -OrchestratorHarnessDll $orchestratorHarnessDll
 
 if ($SkipSecretScan) {
     Write-Warning 'Secret scan was explicitly skipped. This run is not complete repository verification evidence.'

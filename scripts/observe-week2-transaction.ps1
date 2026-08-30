@@ -5,7 +5,12 @@ param(
 
     # Week 4 can replay the same observation against an isolated tracked-file
     # snapshot while continuing to use this repository's verified tool install.
-    [string]$SourceRoot
+    [string]$SourceRoot,
+
+    # Week 14 may add a separately built .NET harness.  The observer supplies
+    # only public deployment facts; the harness creates and owns its temporary
+    # signing key, and never returns raw signed bytes to this script.
+    [string]$OrchestratorHarnessDll
 )
 
 Set-StrictMode -Version Latest
@@ -539,6 +544,16 @@ foreach ($requiredPath in @($contractsDirectory, $forgePath, $castPath, $anvilPa
     }
 }
 
+$dotnetPath = $null
+if (-not [string]::IsNullOrWhiteSpace($OrchestratorHarnessDll)) {
+    $OrchestratorHarnessDll = [System.IO.Path]::GetFullPath($OrchestratorHarnessDll)
+    if (-not (Test-Path -LiteralPath $OrchestratorHarnessDll -PathType Leaf)) {
+        throw "Week 14 orchestrator harness is missing: $OrchestratorHarnessDll"
+    }
+
+    $dotnetPath = (Get-Command dotnet -ErrorAction Stop).Source
+}
+
 # The installer verifies the downloaded release archive's SHA-256. This runtime
 # check then catches a missing, stale, or wrong-version installation; it is not
 # a second per-binary integrity check and must not be described as one.
@@ -826,6 +841,23 @@ try {
     Assert-Condition -Condition ($failedEffectiveGasPrice -gt [System.Numerics.BigInteger]::Zero) -Message 'reverted effectiveGasPrice must be positive'
     Assert-Condition -Condition ($failedGasCost -gt [System.Numerics.BigInteger]::Zero) -Message 'reverted gas cost must be positive'
     Assert-Condition -Condition (-not $anvilHandle.Process.HasExited) -Message 'owned Anvil must remain alive through the final observation'
+
+    if ($null -ne $dotnetPath) {
+        Write-Host 'Running Week 14 locally signed transaction lifecycle...' -ForegroundColor Cyan
+        $week14Output = Invoke-NativeCapture `
+            -FilePath $dotnetPath `
+            -Arguments @(
+                $OrchestratorHarnessDll,
+                '--rpc-url', $rpcUrl,
+                '--router', $routerDeployment.Address,
+                '--token', $usdcDeployment.Address,
+                '--merchant', $merchant,
+                '--runtime-hash', '0x8308fbd23f6bd4bcb4284281ab9388b2a437297aa512a8308b4c2e390205e92c') `
+            -WorkingDirectory $repositoryRoot `
+            -TimeoutSeconds 90
+        Write-Host $week14Output
+        Assert-Condition -Condition (-not $anvilHandle.Process.HasExited) -Message 'owned Anvil must remain alive through Week 14 verification'
+    }
 
     $summary = [pscustomobject]@{
         AnvilClientVersion = $anvilClientVersion

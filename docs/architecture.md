@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 13, including the accepted Gate A baseline; and
+1. the implementation through Week 14, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 13
+## Implemented architecture through Week 14
 
 ```mermaid
 flowchart LR
@@ -46,7 +46,9 @@ flowchart LR
     Reconcile --> ReconcileTests[Classification + replay + five-database<br/>deep-reorg tests]
     Contracts --> Orchestrator[PaymentSandbox.Orchestrator]
     Orchestrator --> LifecycleDb[(SQLite operations, attempts,<br/>broadcasts, and receipts)]
-    TestAdapters[Test-only signer, nonce,<br/>broadcast, and receipt fakes] -.-> Orchestrator
+    TestAdapters[Network-free lifecycle fakes] -.-> Orchestrator
+    Ephemeral[Ephemeral Anvil key<br/>+ signed-field recovery] --> Orchestrator
+    AnvilRpc[Loopback-only Anvil RPC<br/>nonce, raw send, receipt] --> Orchestrator
     Orchestrator --> OrchestratorTests[Policy + lifecycle + concurrency<br/>+ tamper tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
@@ -95,7 +97,17 @@ Week 13 adds another independent class library. Orchestrator receives a payment
 request directly, uses the verified Router client only for exact calldata, and
 persists nonce reservations and signed-attempt history before any broadcast.
 Its signer, nonce, broadcaster, and receipt boundaries are interfaces exercised
-only by fakes in this milestone. There is no key-owning adapter or hosted worker.
+only by fakes in that milestone.
+
+Week 14 adds one concrete integration boundary without turning the library into
+a wallet service. A process-local CSPRNG key signs only policy-bound Anvil
+transactions; the adapter immediately decodes the opaque type-2 bytes, compares
+every unsigned field, re-encodes the full payload, and recovers the signer. A
+credential-free loopback-only RPC client rechecks Anvil chain identity before
+nonce, broadcast, code, or receipt operations. The clean replay owns the Anvil
+process and exercises an accepted-but-lost response plus a same-nonce fee
+replacement. There is still no hosted worker, imported key, public-network
+adapter, or production custody boundary.
 
 ### Transaction lifecycle boundary
 
@@ -116,10 +128,12 @@ stored only to enable exact retry and are redacted from snapshots, string
 representations, and boundary exceptions. The local database is nevertheless
 unencrypted replay material.
 
-The current signer interface is a trust boundary, not a completed wallet. Week
-13 does not decode and recover arbitrary returned raw bytes to prove that they
-contain the requested fields. A real adapter must add that proof before it can
-broadcast on Anvil or Sepolia.
+The general signer interface remains a trust boundary. The Week 14 concrete
+Anvil implementation closes it by decode/re-encode/hash/field/recovery checks,
+but only for a fresh process-local key on chain `31337`. Other signer
+implementations must provide an equivalent proof. Sepolia and production key
+providers remain unimplemented and may not reuse this ephemeral test fixture as
+a custody design.
 
 ### Build and dependency boundary
 
@@ -332,8 +346,8 @@ The Router is token-agnostic and has no production token policy. An emitted amou
 The Router, API, SQLite intent store, bounded Indexer observation/reorg,
 provisional Ledger, confirmation qualification, reconciliation, and lifecycle
 state-machine portions of the following diagram exist. Wallet integration,
-protocol-native finality, and a real signer path are targets, not current
-implementations:
+protocol-native finality, a public-network signer, and production wallet
+integration are targets, not current implementations:
 
 ```mermaid
 flowchart LR
@@ -352,15 +366,17 @@ flowchart LR
     Ledger -. watermarked payment effects .-> Reconcile
 
     Orchestrator[Test-only transaction lifecycle] --> LifecycleDb[(Append-only lifecycle DB)]
-    Orchestrator -. bounded unsigned request .-> Signer[Planned ephemeral test signer]
+    Orchestrator --> Signer[Implemented ephemeral Anvil signer<br/>no imported key]
     Signer -. verified signed raw transaction .-> Chain
 ```
 
 The primary payment path is non-custodial: the payer authorizes a token transfer directly to the merchant. The Router records correlation evidence but does not retain customer balances.
 
-The implemented lifecycle is a separate, test-only capability. Its real signer
-path remains planned; adding one must not turn it into an implicit production
-hot-wallet service merely because it can sign on Anvil or Sepolia.
+The implemented lifecycle is a separate, test-only capability. Its concrete
+signer works only with a generated key and loopback Anvil. Adding a Sepolia or
+production key provider must not turn it into an implicit hot-wallet service;
+that expansion needs explicit authorization, key-lifetime, and operational
+controls.
 
 ## Component responsibilities
 
@@ -396,7 +412,7 @@ failure cases, a bounded .NET identity gate, durable local business idempotency,
 append-only chain observations, bounded fork recovery, provisional linked
 effect/reversal history, reversible confirmation-depth qualification, and
 append-only explainable reconciliation reports, and a durable exact-retry
-transaction lifecycle around a signer interface. It does not implement
+transaction lifecycle plus one ephemeral Anvil signer/RPC verification path. It does not implement
 protocol-native finality, token-delivery proof, balances, payout authorization,
 or off-chain settlement.
 
@@ -419,8 +435,10 @@ exercise protocol mapping, migration, restart, constraints, exact retry,
 concurrent scanners/ledger writers, range/reorg/ledger limits, fork retention,
 atomic branch switching, cross-database effect/reversal projection, and a
 three-database deep-reorg qualification revocation, and a five-database
-reconciliation history across that reorg, and Week 13 uses deterministic
-network-free lifecycle adapters plus temporary SQLite files; see [Threat
+reconciliation history across that reorg. Week 13 uses deterministic
+network-free lifecycle adapters plus temporary SQLite files. Week 14 additionally
+runs a fresh ephemeral key against a script-owned loopback Anvil and checks real
+duplicate/replacement/balance evidence without a configured secret; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary

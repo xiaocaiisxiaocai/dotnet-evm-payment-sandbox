@@ -1,7 +1,12 @@
 [CmdletBinding()]
 param(
     [ValidateRange(1, 65535)]
-    [int]$Port = 19545
+    [int]$Port = 19545,
+
+    # The executable is built from the real workspace before this wrapper
+    # creates its source-only snapshot.  Passing it explicitly keeps the clean
+    # replay free of bin/obj artifacts while still exercising Week 14.
+    [string]$OrchestratorHarnessDll
 )
 
 Set-StrictMode -Version Latest
@@ -170,7 +175,10 @@ try {
 
     # The observer uses the original repository's checksum-verified Foundry
     # binaries, but Forge compiles and broadcasts only the isolated source root.
-    & $observationScript -Port $Port -SourceRoot $snapshotRoot
+    & $observationScript `
+        -Port $Port `
+        -SourceRoot $snapshotRoot `
+        -OrchestratorHarnessDll $OrchestratorHarnessDll
 }
 catch {
     $operationError = $_
