@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Nethereum.Signer" />
+    <!-- Direct pin prevents NuGet from selecting Nethereum's vulnerable minimum. -->
+    <PackageReference Include="Newtonsoft.Json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PaymentSandbox.Domain\PaymentSandbox.Domain.csproj" />
+  </ItemGroup>
+</Project>

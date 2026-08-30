@@ -7,9 +7,9 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-14 complete; Week 15 is next.
+**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-15 complete; Week 16 is next.
 
-Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots, Week 12 appends explainable per-payment reconciliation reports over atomic Intent/Ledger/Finality snapshots, Week 13 adds a durable test-only transaction lifecycle, and Week 14 adds ephemeral loopback-Anvil signing with signed-field recovery and real unknown/replacement RPC evidence.
+Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots, Week 12 appends explainable per-payment reconciliation reports over atomic Intent/Ledger/Finality snapshots, Week 13 adds a durable test-only transaction lifecycle, Week 14 adds ephemeral loopback-Anvil signing, and Week 15 adds bounded EOA SIWE challenge verification with atomic replay prevention.
 
 Implemented in the current repository:
 
@@ -49,6 +49,9 @@ Implemented in the current repository:
 - A process-local Anvil wallet generates a fresh CSPRNG key, binds it to one chain/Router/signer policy, signs EIP-1559 payments, and best-effort zeroes its owned key bytes without exposing or persisting the key.
 - Every concrete signature is decoded, canonically re-encoded, hashed, field-compared, and signer-recovered before broadcast; the concrete RPC adapter accepts only credential-free loopback HTTP Anvil on chain `31337`.
 - Clean replay proves a real accepted-but-response-lost transaction, exact same-byte retry, same-nonce fee replacement, mined receipt, exact merchant balance delta, and zero Router custody.
+- `PaymentSandbox.Authentication` issues server-generated 128-bit SIWE nonces, renders one strict ERC-4361 subset, recovers ERC-191 EOA signatures, and atomically consumes a challenge once.
+- SIWE policy fixes HTTPS origin, same-origin request URI, statement, Anvil/Sepolia chain, lifetime, and clock skew; canonical parsing rejects unsupported fields, CRLF, non-checksummed addresses, cross-domain facts, and ambiguous encodings.
+- Login proof remains separate from Router payments, permits, transaction signing, sessions, roles, and authorization; concurrent replay produces exactly one authentication result.
 - Verification replays compilation, local deployment, successful payment, and revert from a disposable directory containing only Git-known source and the two direct contract dependencies.
 - The Foundry toolchain is pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
 - Local verification and remote CI check the locked .NET build/tests, Foundry formatting/build/tests, local RPC observation, and committed secrets. Gate A run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588), Week 2 run [`33102551138`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33102551138), Week 3 run [`33127124223`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33127124223), Week 4 run [`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343), Week 5 run [`33257669877`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33257669877), Week 6 run [`33259846122`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33259846122), Week 7 run [`33262105541`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33262105541), Week 8 run [`33263968803`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33263968803), and Week 9 run [`33265607326`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33265607326) each passed all three jobs at their respective milestones.
@@ -57,9 +60,9 @@ Implemented in the current repository:
 Deliberately not implemented yet:
 
 - Cross-host database coordination, backup/encryption/tamper evidence, finalized balances, accounting journals, or settlement authorization.
-- API authentication, authorization, tenant isolation, rate limiting, public hosting, or production data handling.
+- HTTP authentication endpoints, sessions/cookies, authorization, tenant isolation, rate limiting, public hosting, or production data handling.
 - Indexer/Ledger/Finality/Reconciliation hosting or scheduling, protocol-native finalized block proofs, application startup wiring, deployment registry, trusted-block/cross-provider checks, completeness proofs, or a public-network Router address.
-- A production/imported-key, hardware, KMS, or Sepolia signer; production broadcaster/RPC adapters; hosted lifecycle worker; SIWE; or off-chain EIP-712/permit construction and validation.
+- A durable/multi-process SIWE store, browser binding, ERC-1271 support, production/imported-key signer, production RPC adapters, hosted lifecycle worker, or off-chain EIP-712/permit construction and validation.
 - Production token allowlisting, fee-on-transfer/rebasing support, on-chain payment state, pause/admin/upgrade/rescue controls, or an audited deployment.
 - Mainnet support, custody, production key management, or production operations.
 
@@ -134,6 +137,8 @@ Do not add a private key to `.env.example`, source files, command history, test 
 | `Directory.Build.props`                    | Applies common compiler, warning, deterministic-build, and lock-file rules.                                              |
 | `Directory.Packages.props`                 | Owns reviewed NuGet versions; project files do not choose versions.                                                      |
 | `PaymentSandbox.slnx`                      | Contains all implemented .NET libraries/applications and their test projects.                                            |
+| `src/PaymentSandbox.Authentication/`       | Strict EOA SIWE policy, message parser, ERC-191 recovery, challenge issuance, and atomic in-memory consumption.            |
+| `tests/PaymentSandbox.Authentication.Tests/` | Canonical format, origin/chain/time/signature, replay, concurrency, capacity, and redaction specifications.             |
 | `src/PaymentSandbox.Domain/`               | Pure domain values and invariants; no RPC, database, ASP.NET, or signer dependencies.                                    |
 | `tests/PaymentSandbox.Domain.Tests/`       | Executable specifications for the Domain project.                                                                        |
 | `src/PaymentSandbox.Contracts/`            | Typed Router ABI projection, read-only identity RPC adapter, trust policy, and verified local calldata encoder.          |
@@ -163,6 +168,7 @@ Do not add a private key to `.env.example`, source files, command history, test 
 | `docs/learning/week-08-chain-observation-checkpoints.md` | Explains exact-range observation, occurrence identity, atomic checkpoints, and the current reorg boundary.    |
 | `docs/learning/week-13-transaction-lifecycle.md` | Explains nonce authority, append-only attempts, unknown rebroadcast, replacements, sensitive raw bytes, and limits. |
 | `docs/learning/week-14-ephemeral-anvil-signing.md` | Explains ephemeral key lifetime, signed-field recovery, loopback RPC, and the real same-nonce Anvil scenario.       |
+| `docs/learning/week-15-siwe-challenge-verification.md` | Explains the strict SIWE subset, ERC-191 recovery, server nonce, and atomic replay prevention.                   |
 | `docs/threat-model.md`                     | Records protected assets, trust boundaries, threats, and current controls.                                               |
 | `docs/decisions/`                          | Records architectural decisions and their trade-offs.                                                                    |
 
@@ -353,6 +359,15 @@ This path remains a verification fixture. It cannot import a key or connect to
 Sepolia, has no hosted worker/API/scheduler, and provides no KMS, hardware-wallet,
 operator-approval, custody, or production RPC design.
 
+Week 15 adds `PaymentSandbox.Authentication` as another independent class
+library. It supports one canonical EOA-only ERC-4361 subset: a configured HTTPS
+origin and same-origin URI, EIP-55 address, fixed statement, version 1,
+Anvil/Sepolia chain, CSPRNG nonce, issued/expiry times, and ERC-191 recovery. The
+in-memory store atomically consumes the exact server challenge once; 24
+concurrent replays yield one success. The result is not a session or
+authorization, and no HTTP endpoint exists. See the [Week 15 SIWE challenge
+guide](docs/learning/week-15-siwe-challenge-verification.md).
+
 The 2026-08-30 Week 13 committed-snapshot verification passed 223/223 .NET
 tests, including 30/30 focused Orchestrator tests. All 36 unchanged Foundry
 tests, the 1,030-byte/zero-slot Router baseline, and successful/reverted Anvil
@@ -383,7 +398,7 @@ jobs.
 - Raw on-chain values remain exact integers. Formatting is an edge concern.
 - Contract-baseline drift requires explicit interface, bytecode, dependency, and downstream-consumer review.
 
-See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), [Week 6](docs/learning/week-06-payment-intent-api.md), [Week 7](docs/learning/week-07-sqlite-persistence.md), [Week 8](docs/learning/week-08-chain-observation-checkpoints.md), [Week 9](docs/learning/week-09-reorg-canonicality.md), [Week 10](docs/learning/week-10-reversible-ledger.md), [Week 11](docs/learning/week-11-confirmation-finality.md), [Week 12](docs/learning/week-12-reconciliation.md), [Week 13](docs/learning/week-13-transaction-lifecycle.md), and [Week 14](docs/learning/week-14-ephemeral-anvil-signing.md) learning guides for the rationale and evidence.
+See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), [Week 6](docs/learning/week-06-payment-intent-api.md), [Week 7](docs/learning/week-07-sqlite-persistence.md), [Week 8](docs/learning/week-08-chain-observation-checkpoints.md), [Week 9](docs/learning/week-09-reorg-canonicality.md), [Week 10](docs/learning/week-10-reversible-ledger.md), [Week 11](docs/learning/week-11-confirmation-finality.md), [Week 12](docs/learning/week-12-reconciliation.md), [Week 13](docs/learning/week-13-transaction-lifecycle.md), [Week 14](docs/learning/week-14-ephemeral-anvil-signing.md), and [Week 15](docs/learning/week-15-siwe-challenge-verification.md) learning guides for the rationale and evidence.
 
 ## Roadmap
 
@@ -403,7 +418,9 @@ See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/de
 | Week 12            | **Complete:** exact Intent/Ledger/Finality snapshots, append-only per-payment reports, evidence copies, and explainable discrepancy codes.                                          |
 | Week 13            | **Complete:** test-only nonce reservation, append-only signed attempts/broadcasts/receipts, exact unknown rebroadcast, and bounded fee-only replacement.                            |
 | Week 14            | **Complete:** ephemeral local-Anvil signing, exact signed-field decode/recovery, loopback RPC, and real unknown/replacement lifecycle evidence.                                     |
-| Weeks 15-19 next   | Add SIWE and separate EIP-712/permit replay controls, beginning with bounded message and nonce models rather than a public endpoint.                                                 |
+| Week 15            | **Complete:** strict EOA SIWE challenge format, HTTPS origin/chain/time policy, ERC-191 recovery, and atomic in-memory replay prevention.                                            |
+| Week 16 next       | Add a migration-owned SQLite SIWE challenge store with restart, shared-file concurrency, expiry, and schema evidence before HTTP.                                                   |
+| Weeks 17-19        | Add a bounded loopback login/session boundary and separate EIP-712/permit replay controls.                                                                                          |
 | Weeks 20-24        | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                          |
 
 Each later capability must arrive with its failure cases and boundary documentation. A roadmap item is not an implemented feature.

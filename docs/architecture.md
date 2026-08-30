@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 14, including the accepted Gate A baseline; and
+1. the implementation through Week 15, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 14
+## Implemented architecture through Week 15
 
 ```mermaid
 flowchart LR
@@ -17,6 +17,9 @@ flowchart LR
     Packages[central package versions<br/>and lock files] --> Build
     Build --> Domain[PaymentSandbox.Domain]
     Domain --> DomainTests[Domain tests<br/>xUnit v3 + MTP]
+    Domain --> Authentication[PaymentSandbox.Authentication<br/>strict EOA SIWE]
+    Authentication --> ChallengeMemory[(Bounded in-memory<br/>one-time challenges)]
+    Authentication --> AuthenticationTests[Canonical parser + ERC-191<br/>replay/concurrency tests]
     Domain --> API[PaymentSandbox.Api]
     Client[Loopback HTTP client] --> API
     API --> SQLite[(SQLite intent store)]
@@ -108,6 +111,13 @@ nonce, broadcast, code, or receipt operations. The clean replay owns the Anvil
 process and exercises an accepted-but-lost response plus a same-nonce fee
 replacement. There is still no hosted worker, imported key, public-network
 adapter, or production custody boundary.
+
+Week 15 adds a separate authentication class library. A fixed HTTPS relying
+party issues a short-lived CSPRNG nonce, renders one canonical ERC-4361 subset,
+recovers an ERC-191 EOA signer, and atomically consumes the exact challenge in a
+bounded in-memory store. The result does not create a session and cannot
+authorize a payment. There is no HTTP endpoint, durable challenge database,
+browser binding, ERC-1271 path, user/tenant model, or role decision.
 
 ### Transaction lifecycle boundary
 
@@ -365,6 +375,10 @@ flowchart LR
     API -. watermarked Intent .-> Reconcile
     Ledger -. watermarked payment effects .-> Reconcile
 
+    Client -. wallet login proof .-> Authentication[Bounded SIWE verification]
+    Authentication --> ChallengeStore[(Current: in-memory challenge state<br/>Planned: durable store)]
+    Authentication -. future session only .-> Session[Planned session boundary]
+
     Orchestrator[Test-only transaction lifecycle] --> LifecycleDb[(Append-only lifecycle DB)]
     Orchestrator --> Signer[Implemented ephemeral Anvil signer<br/>no imported key]
     Signer -. verified signed raw transaction .-> Chain
@@ -383,6 +397,7 @@ controls.
 | Component                     | Owns                                                                              | Must not own                                                                 |
 | ----------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `PaymentSandbox.Domain`       | Value objects, states, invariants, policy inputs                                  | RPC, SQL, HTTP, signing, environment configuration                           |
+| `PaymentSandbox.Authentication` | Canonical SIWE challenges, EOA recovery, and one-time nonce consumption         | Sessions, roles, payment authority, ERC-1271 RPC, or user custody            |
 | `PaymentSandbox.Contracts`    | Typed ABI messages, chain/code identity checks, unsigned local calldata            | Business settlement decisions, private keys, signing or broadcasting          |
 | `PaymentSandbox.Api`          | Payment intent use cases, validation, idempotent HTTP boundary                    | Chain history truth, direct key material                                     |
 | `PaymentSandbox.Indexer`      | Bounded exact-range block/log observations and atomic restart checkpoints          | Settlement, finality claims, mutating chain state, overwriting fork history  |
@@ -414,7 +429,8 @@ effect/reversal history, reversible confirmation-depth qualification, and
 append-only explainable reconciliation reports, and a durable exact-retry
 transaction lifecycle plus one ephemeral Anvil signer/RPC verification path. It does not implement
 protocol-native finality, token-delivery proof, balances, payout authorization,
-or off-chain settlement.
+off-chain settlement, or an authenticated/authorized public service. The SIWE
+result is deliberately not a session.
 
 ## Trust boundaries
 
@@ -424,6 +440,7 @@ Current and future code must treat the following as untrusted input:
 - RPC responses, provider availability, and unfinalized chain data.
 - Contract addresses, expected code hashes, and chain IDs are untrusted configuration until syntactically validated; RPC observations remain untrusted even after they match that policy.
 - Wallet signatures until domain, nonce, time, chain, and signer checks pass.
+- SIWE text, signatures, and nonces until canonical format, configured relying-party facts, ERC-191 recovery, expiry, exact issued challenge, and atomic one-time consumption all pass.
 - Database state that cannot be traced to a migration and source observation.
 - Any secret found in source control; committing a key makes it compromised, not merely misplaced.
 
@@ -438,7 +455,10 @@ three-database deep-reorg qualification revocation, and a five-database
 reconciliation history across that reorg. Week 13 uses deterministic
 network-free lifecycle adapters plus temporary SQLite files. Week 14 additionally
 runs a fresh ephemeral key against a script-owned loopback Anvil and checks real
-duplicate/replacement/balance evidence without a configured secret; see [Threat
+duplicate/replacement/balance evidence without a configured secret. Week 15
+uses generated EOA keys and a mutable test clock to exercise strict SIWE parsing,
+recovery, expiry, and 24-way replay concurrency without HTTP or an external
+identity provider; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary
