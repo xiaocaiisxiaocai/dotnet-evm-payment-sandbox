@@ -200,8 +200,13 @@ same-nonce receipts, non-leaking exceptions, migration idempotency, direct SQL
 trigger enforcement, concurrent nonce allocation, operation replay conflicts,
 nonce lead limits, and raw/fingerprint tamper detection.
 
-The final committed-snapshot counts and CI link are recorded after formal
-verification rather than predicted in this guide.
+The 2026-08-30 committed-snapshot verification passed 223/223 .NET tests,
+including 30/30 focused Orchestrator tests. The same run passed all 36 unchanged
+Foundry tests, the reviewed 1,030-byte/zero-storage-slot Router baseline, and
+successful/reverted Anvil replay from 1,209 Git-known files. The dynamic secret
+canary, candidate-tree scan, and complete 29-commit history scan found no leaks.
+Implementation commit `60f88c1` records the verified code boundary. Remote CI
+evidence is added only after the pushed commit finishes.
 
 ## Suggested reading order
 

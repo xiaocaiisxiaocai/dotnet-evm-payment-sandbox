@@ -339,6 +339,14 @@ or cryptographic round-trip proof that arbitrary signer output contains the
 requested unsigned fields. Those omissions are an explicit safety boundary for
 Week 14, not hidden implementation detail.
 
+The 2026-08-30 Week 13 committed-snapshot verification passed 223/223 .NET
+tests, including 30/30 focused Orchestrator tests. All 36 unchanged Foundry
+tests, the 1,030-byte/zero-slot Router baseline, and successful/reverted Anvil
+replay from 1,209 Git-known files also passed. The dynamic secret canary and
+candidate-tree/full-history scans passed across 29 commits. Implementation
+commit `60f88c1` records this code boundary; the remote CI link is added only
+after its pushed run completes.
+
 ## Architecture rules
 
 - Domain code owns business meaning and invariants, not infrastructure concerns.
