@@ -6,6 +6,7 @@
     <Project Path="src/PaymentSandbox.Finality/PaymentSandbox.Finality.csproj" />
     <Project Path="src/PaymentSandbox.Indexer/PaymentSandbox.Indexer.csproj" />
     <Project Path="src/PaymentSandbox.Ledger/PaymentSandbox.Ledger.csproj" />
+    <Project Path="src/PaymentSandbox.Orchestrator/PaymentSandbox.Orchestrator.csproj" />
     <Project Path="src/PaymentSandbox.Reconciliation/PaymentSandbox.Reconciliation.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -15,6 +16,7 @@
     <Project Path="tests/PaymentSandbox.Finality.Tests/PaymentSandbox.Finality.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Indexer.Tests/PaymentSandbox.Indexer.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Ledger.Tests/PaymentSandbox.Ledger.Tests.csproj" />
+    <Project Path="tests/PaymentSandbox.Orchestrator.Tests/PaymentSandbox.Orchestrator.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Reconciliation.Tests/PaymentSandbox.Reconciliation.Tests.csproj" />
   </Folder>
 </Solution>

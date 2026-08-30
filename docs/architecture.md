@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 12, including the accepted Gate A baseline; and
+1. the implementation through Week 13, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 12
+## Implemented architecture through Week 13
 
 ```mermaid
 flowchart LR
@@ -44,6 +44,10 @@ flowchart LR
     Finality -. atomic decision snapshot .-> Reconcile
     Reconcile --> ReconcileDb[(SQLite immutable reports,<br/>evidence copies, and differences)]
     Reconcile --> ReconcileTests[Classification + replay + five-database<br/>deep-reorg tests]
+    Contracts --> Orchestrator[PaymentSandbox.Orchestrator]
+    Orchestrator --> LifecycleDb[(SQLite operations, attempts,<br/>broadcasts, and receipts)]
+    TestAdapters[Test-only signer, nonce,<br/>broadcast, and receipt fakes] -.-> Orchestrator
+    Orchestrator --> OrchestratorTests[Policy + lifecycle + concurrency<br/>+ tamper tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
     Router --> ContractChecks[Example, permit, fuzz,<br/>and invariant tests]
@@ -86,6 +90,36 @@ Week 12 adds a fourth projection database. Reconciliation selects one
 watermarked Intent lookup, Ledger snapshot, and Finality snapshot; copies exact
 payment evidence; and appends a multidimensional report without mutating any
 upstream state or creating a settlement flag.
+
+Week 13 adds another independent class library. Orchestrator receives a payment
+request directly, uses the verified Router client only for exact calldata, and
+persists nonce reservations and signed-attempt history before any broadcast.
+Its signer, nonce, broadcaster, and receipt boundaries are interfaces exercised
+only by fakes in this milestone. There is no key-owning adapter or hosted worker.
+
+### Transaction lifecycle boundary
+
+`PaymentSandbox.Orchestrator` separates four facts that are often collapsed into
+one unreliable status: operation reservation, signed attempt, broadcast
+observation, and receipt observation. Its public state is derived from those
+append-only rows. A transport exception becomes an `unknown` observation, and
+retry broadcasts the exact stored bytes rather than signing a new payment.
+
+An immediate SQLite transaction arbitrates nonce reservation for processes that
+share one file. Fee-only replacements retain the operation nonce and calldata;
+both EIP-1559 fee fields must meet the rounded policy bump. Positive acceptance
+evidence dominates a later timeout for the same attempt.
+
+The policy permits only local Anvil and Sepolia and binds the verified Router,
+signer, gas/fee ceilings, attempt count, and local nonce lead. Signed bytes are
+stored only to enable exact retry and are redacted from snapshots, string
+representations, and boundary exceptions. The local database is nevertheless
+unencrypted replay material.
+
+The current signer interface is a trust boundary, not a completed wallet. Week
+13 does not decode and recover arbitrary returned raw bytes to prove that they
+contain the requested fields. A real adapter must add that proof before it can
+broadcast on Anvil or Sepolia.
 
 ### Build and dependency boundary
 
@@ -296,9 +330,10 @@ The Router is token-agnostic and has no production token policy. An emitted amou
 ## Planned payment architecture
 
 The Router, API, SQLite intent store, bounded Indexer observation/reorg,
-provisional Ledger, confirmation qualification, and reconciliation portions of
-the following diagram exist. Wallet integration, protocol-native finality, and
-signer paths are targets, not current implementations:
+provisional Ledger, confirmation qualification, reconciliation, and lifecycle
+state-machine portions of the following diagram exist. Wallet integration,
+protocol-native finality, and a real signer path are targets, not current
+implementations:
 
 ```mermaid
 flowchart LR
@@ -316,13 +351,16 @@ flowchart LR
     API -. watermarked Intent .-> Reconcile
     Ledger -. watermarked payment effects .-> Reconcile
 
-    Orchestrator[Test-only transaction orchestrator] -. policy-approved requests .-> Signer[Signer abstraction]
-    Signer -. signed raw transaction .-> Chain
+    Orchestrator[Test-only transaction lifecycle] --> LifecycleDb[(Append-only lifecycle DB)]
+    Orchestrator -. bounded unsigned request .-> Signer[Planned ephemeral test signer]
+    Signer -. verified signed raw transaction .-> Chain
 ```
 
 The primary payment path is non-custodial: the payer authorizes a token transfer directly to the merchant. The Router records correlation evidence but does not retain customer balances.
 
-The later transaction orchestrator is a separate, test-only capability. It must not become an implicit production hot-wallet service merely because it can sign on Anvil or Sepolia.
+The implemented lifecycle is a separate, test-only capability. Its real signer
+path remains planned; adding one must not turn it into an implicit production
+hot-wallet service merely because it can sign on Anvil or Sepolia.
 
 ## Component responsibilities
 
@@ -352,12 +390,13 @@ The architecture must preserve these rules as implementation grows:
 6. Signing policy validates chain, destination, selector, token, amount, and limits before a signer receives a payload.
 7. Login signatures, payment intents, and permits have separate domains and replay controls.
 
-Most of these remain roadmap invariants. The current code establishes exact
+Some remain roadmap invariants. The current code establishes exact
 value types, a narrow non-custodial contract boundary, executable contract
 failure cases, a bounded .NET identity gate, durable local business idempotency,
 append-only chain observations, bounded fork recovery, provisional linked
 effect/reversal history, reversible confirmation-depth qualification, and
-append-only explainable reconciliation reports. It does not implement
+append-only explainable reconciliation reports, and a durable exact-retry
+transaction lifecycle around a signer interface. It does not implement
 protocol-native finality, token-delivery proof, balances, payout authorization,
 or off-chain settlement.
 
@@ -374,13 +413,14 @@ Current and future code must treat the following as untrusted input:
 
 CI intentionally needs no external RPC endpoint or signing secret. Week 5
 identity tests use an in-memory fake, Week 7 API tests use real Kestrel listeners
-and isolated temporary SQLite files, and Weeks 8-12 combine fake-RPC/fork tests
+and isolated temporary SQLite files, Weeks 8-12 combine fake-RPC/fork tests
 with a loopback raw JSON-RPC/ABI fixture and real temporary SQLite files. These
 exercise protocol mapping, migration, restart, constraints, exact retry,
 concurrent scanners/ledger writers, range/reorg/ledger limits, fork retention,
 atomic branch switching, cross-database effect/reversal projection, and a
 three-database deep-reorg qualification revocation, and a five-database
-reconciliation history across that reorg; see [Threat
+reconciliation history across that reorg, and Week 13 uses deterministic
+network-free lifecycle adapters plus temporary SQLite files; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary

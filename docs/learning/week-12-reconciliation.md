@@ -303,9 +303,10 @@ Week 12 still does not add:
 - a hosted reconciliation worker, scheduler, retention, backup, or tamper proof;
 - transaction signing, broadcasting, nonce lifecycle, SIWE, or API authentication.
 
-Week 13 should begin a test-only transaction lifecycle orchestrator. It must
-consume these reports as evidence and must not treat local consistency as an
-automatic settlement or signing instruction.
+Week 13 now adds a separate test-only transaction lifecycle orchestrator. It
+does not consume a reconciliation report as an automatic signing instruction;
+pre-payment transaction creation and post-observation reconciliation remain
+separate use cases. See `week-13-transaction-lifecycle.md`.
 
 ## Suggested reading order
 

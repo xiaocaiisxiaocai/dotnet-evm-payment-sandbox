@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Nethereum.Web3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PaymentSandbox.Contracts\PaymentSandbox.Contracts.csproj" />
+    <ProjectReference Include="..\PaymentSandbox.Domain\PaymentSandbox.Domain.csproj" />
+  </ItemGroup>
+</Project>
