@@ -7,7 +7,7 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-17 complete; Week 18 implementation is awaiting full evidence; Week 19 is next.
+**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-18 complete; Week 19 is next.
 
 Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots, Week 12 appends explainable per-payment reconciliation reports over atomic Intent/Ledger/Finality snapshots, Week 13 adds a durable test-only transaction lifecycle, Week 14 adds ephemeral loopback-Anvil signing, Week 15 adds bounded EOA SIWE challenge verification, Week 16 makes that one-time challenge state durable in SQLite, Week 17 composes it into a loopback-only browser-flow/session boundary, and Week 18 constructs and verifies a separate strict ERC-2612 typed-data boundary without holding a wallet key.
 
@@ -450,6 +450,15 @@ scans found no leaks. GitHub Actions run
 then independently passed locked .NET, Foundry plus signed RPC replay, and
 secret-scan jobs.
 
+The 2026-08-30 Week 18 clean committed snapshot at implementation commit
+[`0b19043`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/0b19043)
+passed 312/312 .NET tests, including 10/10 focused Permit tests, 58/58
+Authentication tests, and 45/45 API tests. All 36 unchanged Foundry tests, the
+1,030-byte/zero-slot Router baseline, and deployment plus the signed Anvil
+lifecycle from 1,274 tracked files passed. The dynamic canary and
+working-tree/complete 44-commit history scans found no leaks. Remote CI evidence
+will be linked after the evidence commit is pushed.
+
 The 2026-08-30 Week 15 committed-snapshot verification passed 272/272 .NET
 tests, including 37/37 focused Authentication tests. All 36 unchanged Foundry
 tests, the 1,030-byte/zero-slot Router baseline, and deployment plus the signed
@@ -494,7 +503,7 @@ See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/de
 | Week 15            | **Complete:** strict EOA SIWE challenge format, HTTPS origin/chain/time policy, ERC-191 recovery, and atomic in-memory replay prevention.                                            |
 | Week 16            | **Complete:** migration-owned SQLite SIWE challenges, restart persistence, database-owned capacity, one-way consumption, and shared-file concurrency.                             |
 | Week 17            | **Complete:** bounded loopback HTTP login/session, exact Origin, browser binding, secure cookies, rotation, CSRF logout, revocation, and restart evidence.                          |
-| Week 18            | **Implementation complete:** canonical ERC-2612 EIP-712 construction, external EOA verification, and checked non-relayed Router calldata preparation.                            |
+| Week 18            | **Complete:** canonical ERC-2612 EIP-712 construction, external EOA verification, checked non-relayed Router calldata, and local committed-snapshot evidence.                         |
 | Week 19            | Add on-chain permit domain/nonce preflight and durable replay/submission controls without conflating them with SIWE authentication.                                                 |
 | Weeks 20-24        | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                          |
 

@@ -139,8 +139,14 @@ The focused tests cover:
 - exact `payWithPermit` ABI decoding and required sender; and
 - defensive signature copies plus redacted string output.
 
-Formal committed-snapshot and remote CI measurements are recorded here after
-the implementation commit is verified.
+The 2026-08-30 clean committed snapshot at implementation commit
+[`0b19043`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/0b19043)
+passed 312/312 .NET tests, including 10/10 focused Permit tests, 58/58
+Authentication tests, and 45/45 API tests. It also passed all 36 unchanged
+Foundry tests, the reviewed 1,030-byte/zero-slot Router baseline, and isolated
+deployment plus signed Anvil lifecycle replay from 1,274 tracked files. The
+dynamic canary and working-tree/complete 44-commit history scans found no leaks.
+Remote CI evidence is linked after the evidence commit is pushed.
 
 ## Residual limitations
 
