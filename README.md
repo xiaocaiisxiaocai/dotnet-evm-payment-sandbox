@@ -521,6 +521,14 @@ working-tree/complete 50-commit history scans found no leaks. GitHub Actions run
 then independently passed locked .NET, Foundry plus signed RPC replay, and
 secret-scan jobs.
 
+The 2026-08-30 Week 21 clean committed snapshot at implementation commit
+`8616f4d` plus SQLite test-isolation commit `484f9e1` passed 349/349 .NET
+tests, including 4/4 focused Observability, 47/47 Orchestrator, and 38/38
+Permit tests. All 36 unchanged Foundry tests, the 1,030-byte/zero-slot Router
+baseline, and deployment plus the signed Anvil lifecycle from 1,318 tracked
+files passed. The dynamic canary and working-tree/complete 54-commit history
+scans found no leaks.
+
 The 2026-08-30 Week 15 committed-snapshot verification passed 272/272 .NET
 tests, including 37/37 focused Authentication tests. All 36 unchanged Foundry
 tests, the 1,030-byte/zero-slot Router baseline, and deployment plus the signed

@@ -211,3 +211,15 @@ Week 22 should turn the now-explicit ambiguous states and retry rules into an
 operator runbook. It should define observation, safe retry, escalation, and
 stop conditions without claiming that metrics or exception text are settlement
 evidence.
+
+## 11. Local committed-snapshot evidence
+
+On 2026-08-30, the clean committed implementation snapshot `8616f4d` plus
+SQLite test-isolation commit `484f9e1` passed 349/349 .NET tests, including 4/4
+focused Observability, 47/47 Orchestrator, and 38/38 Permit tests. The unchanged
+contract suite passed 36/36 Foundry tests and the reviewed Router remained 1,030
+runtime bytes with zero storage slots.
+
+The isolated deployment and signed Anvil lifecycle replay passed from 1,318
+tracked files. The dynamic secret canary, current working tree, and complete
+54-commit history scans found no leaks.
