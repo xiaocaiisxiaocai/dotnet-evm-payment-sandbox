@@ -165,8 +165,13 @@ The focused tests prove:
 - direct invalid nonce insertion being rejected; and
 - issued facts being immutable under direct SQL update.
 
-Final committed-snapshot counts and CI links are recorded after the milestone
-commit passes the complete verification path.
+The 2026-08-30 clean committed snapshot at implementation commit
+[`772d83c`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/772d83c)
+passed 284/284 .NET tests, including 49/49 focused Authentication tests. It also
+passed all 36 unchanged Foundry tests, the reviewed 1,030-byte/zero-slot Router
+baseline, and isolated deployment plus signed Anvil lifecycle replay from 1,249
+tracked files. The dynamic canary and working-tree/complete 38-commit history
+scans found no leaks. The remote CI link is added after GitHub Actions completes.
 
 ## Residual limitations
 
