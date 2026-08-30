@@ -12,7 +12,14 @@
     <PackageVersion Include="Nethereum.Signer" Version="6.1.0"
                     Condition="'$(MSBuildProjectName)' == 'PaymentSandbox.Api.Tests' Or
                                '$(MSBuildProjectName)' == 'PaymentSandbox.Authentication' Or
-                               '$(MSBuildProjectName)' == 'PaymentSandbox.Authentication.Tests'" />
+                               '$(MSBuildProjectName)' == 'PaymentSandbox.Authentication.Tests' Or
+                               '$(MSBuildProjectName)' == 'PaymentSandbox.Permits.Tests'" />
+    <PackageVersion Include="Nethereum.Signer.EIP712" Version="6.1.0"
+                    Condition="'$(MSBuildProjectName)' == 'PaymentSandbox.Permits' Or
+                               '$(MSBuildProjectName)' == 'PaymentSandbox.Permits.Tests'" />
+    <PackageVersion Include="Nethereum.Util" Version="6.1.0"
+                    Condition="'$(MSBuildProjectName)' == 'PaymentSandbox.Permits' Or
+                               '$(MSBuildProjectName)' == 'PaymentSandbox.Permits.Tests'" />
     <!-- Contract RPC access uses the full Web3 package. Domain remains dependency-free. -->
     <PackageVersion Include="Nethereum.Web3" Version="6.1.0" />
     <!-- Nethereum accepts < 14; pin above its vulnerable 11.0.2 dependency floor. -->

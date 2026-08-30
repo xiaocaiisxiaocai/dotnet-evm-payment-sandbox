@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Nethereum.Signer.EIP712" />
+    <PackageReference Include="Nethereum.Util" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PaymentSandbox.Contracts\PaymentSandbox.Contracts.csproj" />
+    <ProjectReference Include="..\PaymentSandbox.Domain\PaymentSandbox.Domain.csproj" />
+  </ItemGroup>
+</Project>

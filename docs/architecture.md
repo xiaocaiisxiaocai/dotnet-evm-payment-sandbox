@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 17, including the accepted Gate A baseline; and
+1. the implementation through Week 18, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 17
+## Implemented architecture through Week 18
 
 ```mermaid
 flowchart LR
@@ -32,6 +32,10 @@ flowchart LR
     Baseline[Reviewed runtime Keccak] --> Contracts
     RPC[Untrusted JSON-RPC] -. chainId + getCode .-> Contracts
     Contracts --> ContractAdapterTests[Network-free adapter tests]
+    Domain --> Permits[PaymentSandbox.Permits<br/>strict ERC-2612 EIP-712]
+    Contracts --> Permits
+    Wallet[External EOA wallet] -. typed data + signature .-> Permits
+    Permits --> PermitTests[Independent hashes + recovery<br/>domain/expiry/Router tests]
     Domain --> Indexer[PaymentSandbox.Indexer]
     Contracts --> Indexer
     RPC -. exact chainId, blocks,<br/>and Router logs .-> Indexer
@@ -134,6 +138,15 @@ atomically replaces an optional prior session, and logout requires matching
 CSRF cookie/header values before one-way revocation. This creates a bounded
 login identity, not a user, role, tenant, payment permission, ERC-1271 path, or
 public authentication service.
+
+Week 18 adds another independent class library. `PaymentSandbox.Permits` takes
+reviewed EIP-712 domain/spender/lifetime policy plus an explicit caller-supplied
+token nonce, then produces deterministic ERC-2612 wallet JSON and hashes. It
+accepts only canonical low-`s` EOA signatures that recover to the owner and
+composes them with the matching `VerifiedPaymentRouterClient`. The result states
+the required owner sender because the Router is intentionally non-relayed. This
+library has no key, RPC, persistence, HTTP, broadcasting, settlement, or SIWE
+dependency; current token-domain and nonce observation remain Week 19 work.
 
 ### Transaction lifecycle boundary
 
@@ -397,6 +410,9 @@ flowchart LR
     Authentication --> ChallengeStore[(SQLite challenge/flow/session state<br/>local shared-file coordination)]
     Authentication --> Session[Current bounded session identity<br/>not payment authorization]
 
+    Client -. external ERC-2612 signature .-> Permits[Strict permit construction + verification]
+    Permits -. typed data / required owner<br/>+ unsigned payWithPermit calldata .-> Wallet
+
     Orchestrator[Test-only transaction lifecycle] --> LifecycleDb[(Append-only lifecycle DB)]
     Orchestrator --> Signer[Implemented ephemeral Anvil signer<br/>no imported key]
     Signer -. verified signed raw transaction .-> Chain
@@ -417,6 +433,7 @@ controls.
 | `PaymentSandbox.Domain`       | Value objects, states, invariants, policy inputs                                  | RPC, SQL, HTTP, signing, environment configuration                           |
 | `PaymentSandbox.Authentication` | Canonical SIWE challenges, EOA recovery, browser-flow binding, opaque sessions, rotation, and revocation | Roles, tenants, payment authority, ERC-1271 RPC, or user custody |
 | `PaymentSandbox.Contracts`    | Typed ABI messages, chain/code identity checks, unsigned local calldata            | Business settlement decisions, private keys, signing or broadcasting          |
+| `PaymentSandbox.Permits`      | Strict ERC-2612 typed data, EOA recovery, policy provenance, and checked Router calldata | Keys, RPC nonce/domain observation, persistence, relaying, broadcast, or settlement |
 | `PaymentSandbox.Api`          | Payment Intent HTTP plus loopback SIWE origin/cookie/session composition          | Authorization policy, chain history truth, direct key material                |
 | `PaymentSandbox.Indexer`      | Bounded exact-range block/log observations and atomic restart checkpoints          | Settlement, finality claims, mutating chain state, overwriting fork history  |
 | `PaymentSandbox.Ledger`       | Provisional occurrence effects, linked reversals, and a durable source cursor       | Finality, balances, payouts, Intent mutation, or source-history mutation     |
@@ -438,6 +455,7 @@ The architecture must preserve these rules as implementation grows:
 5. A retry with an unknown broadcast result must not create a second value transfer.
 6. Signing policy validates chain, destination, selector, token, amount, and limits before a signer receives a payload.
 7. Login signatures, payment intents, and permits have separate domains and replay controls.
+8. Permit signature verification proves one immutable allowance message; it does not prove the supplied token nonce/domain is current, reserve replay state, authorize a merchant, or prove payment.
 
 Some remain roadmap invariants. The current code establishes exact
 value types, a narrow non-custodial contract boundary, executable contract
@@ -449,7 +467,8 @@ transaction lifecycle plus one ephemeral Anvil signer/RPC verification path. It 
 protocol-native finality, token-delivery proof, balances, payout authorization,
 off-chain settlement, or an authenticated/authorized public service. A SIWE
 proof can now create a bounded local session, but that session grants no role or
-payment authority.
+payment authority. The implemented permit layer verifies one strict typed-data
+draft but has not yet observed or reserved its current on-chain nonce.
 
 ## Trust boundaries
 
@@ -462,6 +481,10 @@ Current and future code must treat the following as untrusted input:
 - SIWE text, signatures, and nonces until canonical format, configured relying-party facts, ERC-191 recovery, expiry, exact issued challenge, and atomic one-time consumption all pass.
 - Browser flow/session/CSRF cookies and Origin headers until exact shape,
   uniqueness, configured-origin, expiry, hash lookup, and revocation checks pass.
+- ERC-2612 domain inputs, token nonce snapshots, and wallet signatures until
+  reviewed policy, canonical typed-data hashing, expiry, low-`s`, recovered owner,
+  and matching verified Router checks pass. Even then, current chain usability
+  is unproven until Week 19 preflight.
 - Database state that cannot be traced to a migration and source observation.
 - Any secret found in source control; committing a key makes it compromised, not merely misplaced.
 
@@ -483,7 +506,10 @@ expiry, immutable facts, database-owned capacity, and 24-way cross-instance
 replay concurrency without an external identity provider. Week 17 adds real
 loopback Kestrel tests for exact Origin, hardened cookies, browser binding,
 restart-safe session lookup, rotation, CSRF logout, and expiry; see [Threat
-model](threat-model.md) for the active and residual controls.
+model](threat-model.md) for the active and residual controls. Week 18 uses
+generated EOA keys only in tests and independently compares its manual EIP-712
+bytes/digest with Nethereum before checking cross-domain failure, expiry,
+redaction, and exact Router calldata.
 
 ## Verification boundary
 
