@@ -178,7 +178,10 @@ Authentication tests, and 45/45 API tests. It also passed all 36 unchanged
 Foundry tests, the reviewed 1,030-byte/zero-slot Router baseline, and isolated
 deployment plus signed Anvil lifecycle replay from 1,294 tracked files. The
 dynamic canary and working-tree/complete 47-commit history scans found no leaks.
-Remote CI evidence is added after the pushed evidence commit finishes.
+GitHub Actions run
+[`33312644170`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33312644170)
+independently passed locked .NET, Foundry plus signed RPC replay, and secret-scan
+jobs for the pushed evidence commit.
 
 ## Residual limitations
 
