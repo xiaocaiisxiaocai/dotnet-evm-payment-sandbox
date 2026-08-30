@@ -368,8 +368,10 @@ tests, the 1,030-byte/zero-slot Router baseline, and deployment plus the signed
 unknown/replacement lifecycle from 1,221 Git-known files passed. The generated
 key and signed raw bytes were not printed; the dynamic canary and
 candidate-tree/complete 32-commit history scans found no leaks. Implementation
-commit `e3ec705` records the verified code boundary. Remote CI evidence is added
-only after GitHub independently verifies the pushed commits.
+commit `e3ec705` records the verified code boundary. GitHub Actions run
+[`33295738973`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33295738973)
+independently passed locked .NET, Foundry plus signed RPC replay, and secret-scan
+jobs.
 
 ## Architecture rules
 

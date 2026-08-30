@@ -139,9 +139,12 @@ The 2026-08-30 committed-snapshot verification of implementation commit
 It also passed all 36 unchanged Foundry tests, the reviewed
 1,030-byte/zero-storage-slot Router baseline, and a clean deployment plus Week
 14 signed lifecycle from 1,221 Git-known files. The dynamic secret canary,
-candidate-tree scan, and complete 32-commit history scan found no leaks. The
-remote CI link is appended only after GitHub has independently run the pushed
-commits.
+candidate-tree scan, and complete 32-commit history scan found no leaks.
+GitHub Actions run
+[`33295738973`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33295738973)
+then independently passed all three jobs: locked .NET build/tests, Foundry
+build/tests plus real signed RPC replay, and working-rules/full-history secret
+scan.
 
 ## Suggested reading order
 
