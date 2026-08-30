@@ -171,8 +171,14 @@ Focused tests cover:
 - idempotent migrations, database-owned capacity, immutable rows, illegal
   transition rejection, and read-time calldata corruption detection.
 
-Final clean-snapshot and remote CI counts are recorded after the implementation
-commit is verified.
+The 2026-08-30 clean committed snapshot at implementation commit
+[`e308e1b`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/e308e1b)
+passed 333/333 .NET tests, including 31/31 focused Permit tests, 58/58
+Authentication tests, and 45/45 API tests. It also passed all 36 unchanged
+Foundry tests, the reviewed 1,030-byte/zero-slot Router baseline, and isolated
+deployment plus signed Anvil lifecycle replay from 1,294 tracked files. The
+dynamic canary and working-tree/complete 47-commit history scans found no leaks.
+Remote CI evidence is added after the pushed evidence commit finishes.
 
 ## Residual limitations
 
