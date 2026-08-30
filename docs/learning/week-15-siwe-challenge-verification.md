@@ -186,8 +186,13 @@ wrong signer, invalid signature shape and recovery ID, cross-domain/cross-chain/
 cross-URI/cross-statement attempts, shifted time facts, expiry, foreign stores,
 capacity recovery, exact replay, and 24-way concurrent consumption.
 
-Final committed-snapshot counts and CI links are recorded after the milestone
-commit passes the complete verification path.
+The 2026-08-30 clean committed snapshot at implementation commit
+[`ad17b1e`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/ad17b1e)
+passed 272/272 .NET tests, including 37/37 focused Authentication tests. It also
+passed all 36 unchanged Foundry tests, the reviewed 1,030-byte/zero-slot Router
+baseline, and isolated deployment plus signed Anvil lifecycle replay from 1,242
+tracked files. The dynamic canary and working-tree/complete 35-commit history
+scans found no leaks. The remote CI link is added after GitHub Actions completes.
 
 ## Suggested reading order
 

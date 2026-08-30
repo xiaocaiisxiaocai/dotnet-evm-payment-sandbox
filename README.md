@@ -388,6 +388,15 @@ commit `e3ec705` records the verified code boundary. GitHub Actions run
 independently passed locked .NET, Foundry plus signed RPC replay, and secret-scan
 jobs.
 
+The 2026-08-30 Week 15 committed-snapshot verification passed 272/272 .NET
+tests, including 37/37 focused Authentication tests. All 36 unchanged Foundry
+tests, the 1,030-byte/zero-slot Router baseline, and deployment plus the signed
+Anvil lifecycle from 1,242 tracked files passed. The dynamic canary and
+working-tree/complete 35-commit history scans found no leaks. Implementation
+commit [`ad17b1e`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/ad17b1e)
+records the strict SIWE boundary; remote CI evidence is added after that commit
+finishes on GitHub Actions.
+
 ## Architecture rules
 
 - Domain code owns business meaning and invariants, not infrastructure concerns.
