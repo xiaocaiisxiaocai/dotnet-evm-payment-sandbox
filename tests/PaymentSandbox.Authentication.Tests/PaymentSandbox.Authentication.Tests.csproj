@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Nethereum.Signer" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="xunit.v3" />

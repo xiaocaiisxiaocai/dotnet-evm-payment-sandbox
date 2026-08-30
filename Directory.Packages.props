@@ -17,7 +17,7 @@
     <!-- Nethereum accepts < 14; pin above its vulnerable 11.0.2 dependency floor. -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
 
-    <!-- Used only by the API persistence adapter and its integration tests. -->
+    <!-- SQLite-backed bounded stores each own a separate migration history. -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
   </ItemGroup>
 </Project>

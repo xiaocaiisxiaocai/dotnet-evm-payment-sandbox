@@ -209,7 +209,7 @@ secret-scan jobs.
 
 ## What should come next
 
-Week 16 should replace the process-local challenge state with a separately
-migrated SQLite store. It should prove restart persistence, atomic shared-file
-consumption, expiry cleanup, schema constraints, and strict retry behavior
-before any HTTP login endpoint is added.
+Week 16 now adds the separately migrated SQLite implementation described in the
+[Week 16 durable challenge guide](week-16-sqlite-siwe-challenges.md). It proves
+restart persistence, atomic shared-file consumption, expiry cleanup, schema
+constraints, and strict retry behavior before any HTTP login endpoint is added.

@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 15, including the accepted Gate A baseline; and
+1. the implementation through Week 16, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 15
+## Implemented architecture through Week 16
 
 ```mermaid
 flowchart LR
@@ -18,8 +18,9 @@ flowchart LR
     Build --> Domain[PaymentSandbox.Domain]
     Domain --> DomainTests[Domain tests<br/>xUnit v3 + MTP]
     Domain --> Authentication[PaymentSandbox.Authentication<br/>strict EOA SIWE]
-    Authentication --> ChallengeMemory[(Bounded in-memory<br/>one-time challenges)]
-    Authentication --> AuthenticationTests[Canonical parser + ERC-191<br/>replay/concurrency tests]
+    Authentication --> ChallengeDb[(SQLite issued/consumed challenges<br/>owned migration + capacity)]
+    Authentication -. reference adapter .-> ChallengeMemory[(Bounded in-memory<br/>one-time challenges)]
+    Authentication --> AuthenticationTests[Canonical + ERC-191 + SQLite<br/>restart/replay/concurrency tests]
     Domain --> API[PaymentSandbox.Api]
     Client[Loopback HTTP client] --> API
     API --> SQLite[(SQLite intent store)]
@@ -116,8 +117,14 @@ Week 15 adds a separate authentication class library. A fixed HTTPS relying
 party issues a short-lived CSPRNG nonce, renders one canonical ERC-4361 subset,
 recovers an ERC-191 EOA signer, and atomically consumes the exact challenge in a
 bounded in-memory store. The result does not create a session and cannot
-authorize a payment. There is no HTTP endpoint, durable challenge database,
-browser binding, ERC-1271 path, user/tenant model, or role decision.
+authorize a payment.
+
+Week 16 adds a dedicated SQLite implementation behind the same store interface.
+An owned `STRICT` migration persists issued/consumed state, pins one shared
+capacity, and permits only a one-way consumption update. Immediate transactions
+coordinate local processes sharing the file, including after restart. It stores
+no wallet address, message, or signature. There is still no HTTP endpoint,
+browser binding, session, ERC-1271 path, user/tenant model, or role decision.
 
 ### Transaction lifecycle boundary
 
@@ -376,7 +383,7 @@ flowchart LR
     Ledger -. watermarked payment effects .-> Reconcile
 
     Client -. wallet login proof .-> Authentication[Bounded SIWE verification]
-    Authentication --> ChallengeStore[(Current: in-memory challenge state<br/>Planned: durable store)]
+    Authentication --> ChallengeStore[(Current: SQLite durable challenge state<br/>local shared-file coordination)]
     Authentication -. future session only .-> Session[Planned session boundary]
 
     Orchestrator[Test-only transaction lifecycle] --> LifecycleDb[(Append-only lifecycle DB)]
@@ -455,10 +462,11 @@ three-database deep-reorg qualification revocation, and a five-database
 reconciliation history across that reorg. Week 13 uses deterministic
 network-free lifecycle adapters plus temporary SQLite files. Week 14 additionally
 runs a fresh ephemeral key against a script-owned loopback Anvil and checks real
-duplicate/replacement/balance evidence without a configured secret. Week 15
-uses generated EOA keys and a mutable test clock to exercise strict SIWE parsing,
-recovery, expiry, and 24-way replay concurrency without HTTP or an external
-identity provider; see [Threat
+duplicate/replacement/balance evidence without a configured secret. Week 15 uses
+generated EOA keys and a mutable test clock to exercise strict SIWE parsing and
+recovery. Week 16 adds temporary SQLite files to prove migration, restart, exact
+expiry, immutable facts, database-owned capacity, and 24-way cross-instance
+replay concurrency without HTTP or an external identity provider; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary
