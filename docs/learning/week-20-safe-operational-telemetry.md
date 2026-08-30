@@ -195,5 +195,7 @@ the reviewed Router remained 1,030 runtime bytes with zero storage slots.
 
 The isolated deployment and signed Anvil lifecycle replay passed from 1,306
 tracked files. The dynamic secret canary, current working tree, and complete
-50-commit history scans found no leaks. Remote CI evidence is linked separately
-after the documentation commit receives an independent run.
+50-commit history scans found no leaks. GitHub Actions run
+[`33317338502`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33317338502)
+then independently passed the locked .NET, Foundry plus signed RPC replay, and
+secret-scan jobs.

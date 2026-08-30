@@ -502,8 +502,10 @@ The 2026-08-30 Week 20 clean committed snapshot at implementation commit
 43/43 Orchestrator, and 32/32 Permit tests. All 36 unchanged Foundry tests, the
 1,030-byte/zero-slot Router baseline, and deployment plus the signed Anvil
 lifecycle from 1,306 tracked files passed. The dynamic canary and
-working-tree/complete 50-commit history scans found no leaks. Remote CI evidence
-is recorded separately after the documentation commit.
+working-tree/complete 50-commit history scans found no leaks. GitHub Actions run
+[`33317338502`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33317338502)
+then independently passed locked .NET, Foundry plus signed RPC replay, and
+secret-scan jobs.
 
 The 2026-08-30 Week 15 committed-snapshot verification passed 272/272 .NET
 tests, including 37/37 focused Authentication tests. All 36 unchanged Foundry
