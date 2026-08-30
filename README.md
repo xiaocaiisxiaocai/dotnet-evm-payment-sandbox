@@ -305,6 +305,15 @@ selected evidence and appends a new report. This is local evidence agreement,
 not token-delivery proof, accounting, protocol finality, or settlement. See the
 [Week 12 reconciliation guide](docs/learning/week-12-reconciliation.md).
 
+The 2026-08-30 Week 12 committed-snapshot verification passed 193/193 .NET
+tests, including 20/20 focused Reconciliation tests. All 36 unchanged Foundry
+tests, the 1,030-byte/zero-slot Router baseline, and successful/reverted Anvil
+observation replay from 1,177 Git-known files also passed. The dynamic secret
+canary and working-tree/full-history scans passed across the complete 26-commit
+history. Implementation commit
+[`cb1131b`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb1131b)
+records the Week 12 boundary.
+
 ## Architecture rules
 
 - Domain code owns business meaning and invariants, not infrastructure concerns.

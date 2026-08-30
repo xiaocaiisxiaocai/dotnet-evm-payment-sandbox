@@ -272,6 +272,23 @@ amount_underpaid
 The first consistent report remains queryable. It truthfully describes its old
 source snapshot; the second report explains why the current snapshot differs.
 
+## Verification evidence
+
+The focused Reconciliation suite covers atomic source guards, exact and partial
+aggregation, mismatch combinations, reversal history, malformed reader facts,
+resource limits, migration idempotency, unknown-result replay, changed-fact and
+durable-tamper conflicts, concurrency, later-watermark history, and the real
+five-database reorganization path.
+
+The 2026-08-30 committed-snapshot verification passed 193/193 .NET tests,
+including 20/20 focused Reconciliation tests. The same run passed all 36
+unchanged Foundry tests, the reviewed 1,030-byte/zero-storage-slot Router
+baseline, and successful/reverted Anvil observation replay from 1,177 Git-known
+files. The dynamic secret canary, candidate working-tree scan, and complete
+26-commit history scan found no leaks. Implementation commit
+[`cb1131b`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb1131b)
+records the boundary verified here.
+
 ## What remains for Week 13 and later
 
 Week 12 still does not add:
