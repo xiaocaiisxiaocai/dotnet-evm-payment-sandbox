@@ -7,7 +7,7 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-17 implementation complete and awaiting final evidence.
+**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-17 complete locally; Week 17 remote CI is pending.
 
 Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots, Week 12 appends explainable per-payment reconciliation reports over atomic Intent/Ledger/Finality snapshots, Week 13 adds a durable test-only transaction lifecycle, Week 14 adds ephemeral loopback-Anvil signing, Week 15 adds bounded EOA SIWE challenge verification, Week 16 makes that one-time challenge state durable in SQLite, and Week 17 composes it into a loopback-only browser-flow/session boundary.
 
@@ -424,6 +424,14 @@ records the durable SIWE boundary. GitHub Actions run
 [`33300425392`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33300425392)
 independently passed locked .NET, Foundry plus signed RPC replay, and secret-scan
 jobs.
+
+The 2026-08-30 Week 17 clean committed snapshot at implementation commit
+[`eb18eda`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/eb18eda)
+passed 302/302 .NET tests, including 58/58 focused Authentication tests and
+45/45 API tests. All 36 unchanged Foundry tests, the 1,030-byte/zero-slot Router
+baseline, and deployment plus the signed Anvil lifecycle from 1,262 tracked
+files passed. The dynamic canary and working-tree/complete 41-commit history
+scans found no leaks. Remote CI evidence will be linked after it completes.
 
 The 2026-08-30 Week 15 committed-snapshot verification passed 272/272 .NET
 tests, including 37/37 focused Authentication tests. All 36 unchanged Foundry

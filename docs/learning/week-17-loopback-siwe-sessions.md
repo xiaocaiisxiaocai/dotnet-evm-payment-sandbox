@@ -169,8 +169,14 @@ attributes, duplicate flow-cookie rejection, flow verification after restart,
 session lookup after another restart, HTTP rotation/logout, and generic expired
 session responses.
 
-Formal committed-snapshot and GitHub Actions evidence will be added after the
-implementation commit is independently verified.
+The 2026-08-30 clean committed snapshot at implementation commit
+[`eb18eda`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/eb18eda)
+passed 302/302 .NET tests, including 58/58 focused Authentication tests and
+45/45 API tests. It also passed all 36 unchanged Foundry tests, the reviewed
+1,030-byte/zero-slot Router baseline, and isolated deployment plus signed Anvil
+lifecycle replay from 1,262 tracked files. The dynamic canary and
+working-tree/complete 41-commit history scans found no leaks. Remote CI evidence
+will be linked after it completes.
 
 ## Residual limitations
 
