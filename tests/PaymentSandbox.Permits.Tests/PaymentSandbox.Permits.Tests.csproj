@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaymentSandbox.Permits\PaymentSandbox.Permits.csproj" />
+    <ProjectReference Include="..\PaymentSandbox.Testing\PaymentSandbox.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

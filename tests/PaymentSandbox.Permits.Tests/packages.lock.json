@@ -396,6 +396,12 @@
           "PaymentSandbox.Observability": "[1.0.0, )"
         }
       },
+      "paymentsandbox.testing": {
+        "type": "Project",
+        "dependencies": {
+          "PaymentSandbox.Observability": "[1.0.0, )"
+        }
+      },
       "Nethereum.Web3": {
         "type": "CentralTransitive",
         "requested": "[6.1.0, )",

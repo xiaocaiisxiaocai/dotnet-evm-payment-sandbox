@@ -25,5 +25,6 @@
     <Project Path="tests/PaymentSandbox.Orchestrator.Tests/PaymentSandbox.Orchestrator.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Permits.Tests/PaymentSandbox.Permits.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Reconciliation.Tests/PaymentSandbox.Reconciliation.Tests.csproj" />
+    <Project Path="tests/PaymentSandbox.Testing/PaymentSandbox.Testing.csproj" />
   </Folder>
 </Solution>

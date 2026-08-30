@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaymentSandbox.Orchestrator\PaymentSandbox.Orchestrator.csproj" />
+    <ProjectReference Include="..\PaymentSandbox.Testing\PaymentSandbox.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

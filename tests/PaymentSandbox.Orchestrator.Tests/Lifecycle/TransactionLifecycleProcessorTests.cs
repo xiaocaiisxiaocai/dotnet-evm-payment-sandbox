@@ -3,6 +3,7 @@ using PaymentSandbox.Orchestrator.Abstractions;
 using PaymentSandbox.Orchestrator.Lifecycle;
 using PaymentSandbox.Orchestrator.Tests.Infrastructure;
 using PaymentSandbox.Orchestrator.Transactions;
+using PaymentSandbox.Testing.Faults;
 
 namespace PaymentSandbox.Orchestrator.Tests.Lifecycle;
 
@@ -34,6 +35,142 @@ public sealed class TransactionLifecycleProcessorTests
                     OperationalFailureCode.None),
             ],
             telemetry.Observations);
+    }
+
+    [Fact]
+    public async Task CreateCommitResponseLoss_RetryDoesNotReadNonceOrSignAgain()
+    {
+        await using var temporary = new TemporaryTransactionLifecycleDatabase();
+        var recording = new RecordingOperationalTelemetry();
+        var fault = new OneShotPostCompletionFaultTelemetry(recording);
+        var components = await OrchestratorTestData.CreateProcessorAsync(
+            temporary, telemetry: fault);
+        PaymentTransactionRequest request = OrchestratorTestData.Request();
+        fault.Arm(OperationalAction.TransactionCreate, OperationalOutcome.Applied);
+
+        await Assert.ThrowsAsync<InjectedPostCompletionFaultException>(() =>
+            components.Processor.CreateAsync(
+                request, TestContext.Current.CancellationToken));
+
+        // The caller saw a failure, but the signed attempt was already durable.
+        TransactionLifecycleSnapshot durable = Assert.IsType<TransactionLifecycleSnapshot>(
+            await components.Store.GetAsync(
+                request.OperationId, TestContext.Current.CancellationToken));
+        Assert.Equal(TransactionLifecycleState.Signed, durable.State);
+        Assert.Equal(1, durable.AttemptCount);
+
+        LifecycleCommitResult retry = await components.Processor.CreateAsync(
+            request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(LifecycleCommitDisposition.NoWork, retry.Disposition);
+        Assert.Equal(1, components.Nonces.Calls);
+        Assert.Single(components.Signer.Transactions);
+        Assert.Equal(1, fault.TriggerCount);
+        Assert.False(fault.IsArmed);
+    }
+
+    [Fact]
+    public async Task BroadcastCommitResponseLoss_RetryDoesNotBroadcastAgain()
+    {
+        await using var temporary = new TemporaryTransactionLifecycleDatabase();
+        var fault = new OneShotPostCompletionFaultTelemetry(
+            new RecordingOperationalTelemetry());
+        var components = await OrchestratorTestData.CreateProcessorAsync(
+            temporary, telemetry: fault);
+        TransactionOperationId id = OrchestratorTestData.Request().OperationId;
+        await components.Processor.CreateAsync(
+            OrchestratorTestData.Request(), TestContext.Current.CancellationToken);
+        fault.Arm(OperationalAction.TransactionBroadcast, OperationalOutcome.Applied);
+
+        await Assert.ThrowsAsync<InjectedPostCompletionFaultException>(() =>
+            components.Processor.BroadcastAsync(
+                id, TestContext.Current.CancellationToken));
+
+        TransactionLifecycleSnapshot durable = Assert.IsType<TransactionLifecycleSnapshot>(
+            await components.Store.GetAsync(id, TestContext.Current.CancellationToken));
+        Assert.Equal(TransactionLifecycleState.Submitted, durable.State);
+
+        LifecycleCommitResult retry = await components.Processor.BroadcastAsync(
+            id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(LifecycleCommitDisposition.NoWork, retry.Disposition);
+        Assert.Single(components.Broadcaster.RawTransactions);
+    }
+
+    [Fact]
+    public async Task ReplacementCommitResponseLoss_IdenticalRetryDoesNotSignThirdAttempt()
+    {
+        await using var temporary = new TemporaryTransactionLifecycleDatabase();
+        var fault = new OneShotPostCompletionFaultTelemetry(
+            new RecordingOperationalTelemetry());
+        var components = await OrchestratorTestData.CreateProcessorAsync(
+            temporary, telemetry: fault);
+        TransactionOperationId id = OrchestratorTestData.Request().OperationId;
+        var replacementFee = new TransactionFeeQuote(110, 11);
+        await components.Processor.CreateAsync(
+            OrchestratorTestData.Request(), TestContext.Current.CancellationToken);
+        await components.Processor.BroadcastAsync(
+            id, TestContext.Current.CancellationToken);
+        fault.Arm(OperationalAction.TransactionReplace, OperationalOutcome.Applied);
+
+        await Assert.ThrowsAsync<InjectedPostCompletionFaultException>(() =>
+            components.Processor.ReplaceAsync(
+                id, replacementFee, TestContext.Current.CancellationToken));
+
+        TransactionLifecycleSnapshot durable = Assert.IsType<TransactionLifecycleSnapshot>(
+            await components.Store.GetAsync(id, TestContext.Current.CancellationToken));
+        Assert.Equal(TransactionLifecycleState.Signed, durable.State);
+        Assert.Equal(2, durable.AttemptCount);
+
+        LifecycleCommitResult retry = await components.Processor.ReplaceAsync(
+            id, replacementFee, TestContext.Current.CancellationToken);
+
+        Assert.Equal(LifecycleCommitDisposition.NoWork, retry.Disposition);
+        Assert.Equal(2, components.Signer.Transactions.Count);
+        Assert.Equal(2, retry.Snapshot.AttemptCount);
+    }
+
+    [Fact]
+    public async Task ReceiptCommitResponseLoss_RetryDoesNotReadReceiptAgain()
+    {
+        await using var temporary = new TemporaryTransactionLifecycleDatabase();
+        var fault = new OneShotPostCompletionFaultTelemetry(
+            new RecordingOperationalTelemetry());
+        var components = await OrchestratorTestData.CreateProcessorAsync(
+            temporary, telemetry: fault);
+        TransactionOperationId id = OrchestratorTestData.Request().OperationId;
+        await components.Processor.CreateAsync(
+            OrchestratorTestData.Request(), TestContext.Current.CancellationToken);
+        await components.Processor.BroadcastAsync(
+            id, TestContext.Current.CancellationToken);
+        TransactionAttemptPayload attempt = Assert.Single(
+            await components.Store.GetPayloadsAsync(
+                id, TestContext.Current.CancellationToken));
+        components.Receipts.Values[attempt.Summary.TransactionHash] =
+            new TransactionReceiptObservation(
+                attempt.Summary.TransactionHash,
+                TransactionExecutionStatus.Succeeded,
+                12,
+                TransactionHash.Parse($"0x{new string('b', 64)}"),
+                80_000,
+                50);
+        fault.Arm(
+            OperationalAction.TransactionRefreshReceipt,
+            OperationalOutcome.Applied);
+
+        await Assert.ThrowsAsync<InjectedPostCompletionFaultException>(() =>
+            components.Processor.RefreshReceiptAsync(
+                id, TestContext.Current.CancellationToken));
+
+        TransactionLifecycleSnapshot durable = Assert.IsType<TransactionLifecycleSnapshot>(
+            await components.Store.GetAsync(id, TestContext.Current.CancellationToken));
+        Assert.Equal(TransactionLifecycleState.MinedSucceeded, durable.State);
+
+        LifecycleCommitResult retry = await components.Processor.RefreshReceiptAsync(
+            id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(LifecycleCommitDisposition.NoWork, retry.Disposition);
+        Assert.Single(components.Receipts.Reads);
     }
 
     [Fact]

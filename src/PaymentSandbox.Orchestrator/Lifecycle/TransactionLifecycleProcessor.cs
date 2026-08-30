@@ -144,7 +144,11 @@ public sealed class TransactionLifecycleProcessor
         return await _store.AppendBroadcastAsync(observation, cancellationToken);
     }
 
-    /// <summary>Signs a fee-only replacement that preserves nonce and payment calldata.</summary>
+    /// <summary>
+    /// Signs a fee-only replacement that preserves nonce and payment calldata.
+    /// An identical retry after the replacement commit returns no-work instead
+    /// of signing a third same-nonce attempt.
+    /// </summary>
     public Task<LifecycleCommitResult> ReplaceAsync(
         TransactionOperationId operationId,
         TransactionFeeQuote replacementFee,
@@ -171,10 +175,29 @@ public sealed class TransactionLifecycleProcessor
             return new LifecycleCommitResult(LifecycleCommitDisposition.NoWork, snapshot);
         }
 
-        if (snapshot.State is TransactionLifecycleState.Reserved or TransactionLifecycleState.Signed)
+        if (snapshot.State == TransactionLifecycleState.Reserved)
         {
             throw new TransactionLifecycleException(
                 "A replacement requires an earlier broadcast observation.");
+        }
+
+        TransactionAttemptPayload? current = null;
+        if (snapshot.State == TransactionLifecycleState.Signed)
+        {
+            current = await _store.GetCurrentPayloadAsync(operationId, cancellationToken)
+                ?? throw new TransactionLifecycleException("The signed current attempt is missing.");
+            // Attempt one is the initial transaction and cannot be called a
+            // replacement. A later Signed attempt can exist only after a prior
+            // broadcast observation. If its exact fee equals this request, the
+            // previous replacement commit succeeded and only its response was
+            // lost; do not sign another attempt.
+            if (snapshot.AttemptCount > 1 && current.Summary.Fee == replacementFee)
+            {
+                return new LifecycleCommitResult(LifecycleCommitDisposition.NoWork, snapshot);
+            }
+
+            throw new TransactionLifecycleException(
+                "The current signed replacement must be broadcast before another replacement.");
         }
 
         if (snapshot.AttemptCount >= _policy.MaxAttemptsPerOperation)
@@ -183,7 +206,7 @@ public sealed class TransactionLifecycleProcessor
                 "The operation already reached the lifecycle attempt limit.");
         }
 
-        TransactionAttemptPayload current = await _store.GetCurrentPayloadAsync(operationId, cancellationToken)
+        current ??= await _store.GetCurrentPayloadAsync(operationId, cancellationToken)
             ?? throw new TransactionLifecycleException("The current attempt is missing.");
         _policy.ValidateReplacement(current.Summary.Fee, replacementFee);
         string calldata = Encode(snapshot).Data;

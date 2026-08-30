@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 20, including the accepted Gate A baseline; and
+1. the implementation through Week 21, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 20
+## Implemented architecture through Week 21
 
 ```mermaid
 flowchart LR
@@ -59,6 +59,8 @@ flowchart LR
     Reconcile --> ReconcileTests[Classification + replay + five-database<br/>deep-reorg tests]
     Contracts --> Orchestrator[PaymentSandbox.Orchestrator]
     Observability --> Orchestrator
+    FaultTesting[PaymentSandbox.Testing<br/>test-only one-shot post-completion fault] -.-> PermitTests
+    FaultTesting -.-> OrchestratorTests
     Orchestrator --> LifecycleDb[(SQLite operations, attempts,<br/>broadcasts, and receipts)]
     TestAdapters[Network-free lifecycle fakes] -.-> Orchestrator
     Ephemeral[Ephemeral Anvil key<br/>+ signed-field recovery] --> Orchestrator
@@ -175,6 +177,22 @@ up/down counter. The workflows cannot attach arbitrary tags, identifiers,
 payloads, URLs, exception objects, or exception text. The repository tests this contract with real .NET listeners,
 but does not configure an exporter, telemetry backend, dashboard, alert,
 sampling policy, or production host.
+
+Week 21 reuses the public operation-completion boundary only from a shared test
+project. A one-shot observer throws after one selected successful business
+result but before it reaches the test caller. The production projects do not
+reference this fault implementation. Focused tests then reopen durable state
+and retry through the normal public API, asserting both replay/no-work results
+and dependency call counts. The evidence covers transaction create, broadcast,
+fee replacement and receipt refresh, plus Permit reserve, preparation,
+authorization release, outcome recording and expiry refresh.
+
+Those tests close two state-machine gaps. An exact fee replacement retry can
+recognize the already signed later attempt and return no-work without signing a
+third same-nonce transaction. An exact Permit outcome retry recognizes the
+already appended authorization/outcome edge and returns replayed without
+duplicating or reversing that evidence. Contradictory outcome facts and a new
+replacement while the current one remains unbroadcast still fail closed.
 
 ### Transaction lifecycle boundary
 

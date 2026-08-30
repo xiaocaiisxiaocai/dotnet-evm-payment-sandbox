@@ -1,6 +1,6 @@
 # Threat Model v1
 
-- Status: Week 20 payload-blind operational telemetry update to the Week 1 security baseline
+- Status: Week 21 deterministic post-commit recovery update to the Week 1 security baseline
 - Last updated: 2026-08-30
 - Owner: repository maintainer
 
@@ -65,6 +65,7 @@ Boundary assumptions:
 - Pull-request code is untrusted input. CI has no deployment key, does not use `pull_request_target`, retains no checkout credentials, and receives only `contents: read` permission.
 - Local SQLite files and logs do not provide production-grade confidentiality or tamper resistance.
 - Operational telemetry is an exfiltration and resource-exhaustion boundary. Week 20 permits only compile-time-bounded component/action/outcome/failure labels and never passes signatures, calldata, signed transactions, addresses, identifiers, RPC URLs, or exception details to instrumentation. No exporter or backend is configured; a future host must separately review exporter defaults, resource attributes, access, retention, and cost controls.
+- Week 21 fault injection exists only in a test project and throws after one exact successful public action/outcome. Production code has no crash switch and does not reference the test utility. Recovery trusts committed state rather than exception text: exact retries must replay/no-op without repeating signing, accepted broadcast, receipt reads, terminal Permit RPC reads, or outcome transitions. The tests do not simulate hardware power loss, filesystem corruption, cross-host storage, or automatic retry ownership.
 
 ## 4. Assets
 
@@ -113,6 +114,10 @@ Breaking any invariant requires the experiment to stop until it is investigated:
     from the caller-observed transition. These controls must not be presented as
     provider honesty, merchant authorization, receipt success, known permit
     consumption, finality, accounting credit, or settlement.
+20. A caller-visible failure after a durable mutation must not by itself cause
+    another value-moving or authorization side effect. Recovery must inspect
+    durable state; an exact replacement or Permit outcome retry may only
+    replay/no-op, while contradictory facts must fail closed.
 
 ## 6. Risk Register
 
@@ -127,7 +132,7 @@ Breaking any invariant requires the experiment to stop until it is investigated:
 | S05 | A malicious or incorrect RPC reports the wrong chain or contract state | Medium | High | Week 5 checks Router chain/address/runtime identity; Week 8 checks exact ranges, block identity/parents, emitter and event occurrence fields; Week 19 pins permit code/name/domain/nonce reads to one block and rereads its hash; trusted-block and independent-provider checks remain | Partly controlled | Gate B |
 | S06 | Configuration error deploys or signs on an unintended network | Low | High | `DeployLocal` fails closed outside `31337`; the lifecycle policy allows only `31337` or `11155111`; the concrete generated-key/RPC adapter further requires credential-free loopback Anvil `31337`, its own signer, and the verified Router identity | Partly controlled | Gates A/B/D |
 | S07 | Reorg, truncated logs, or incorrect finality causes false credit | Medium | High | Weeks 8-9 retain exact fork/canonicality history; Week 10 appends provisional reversals; Week 11 appends caught-up qualification/revocation; Week 12 appends a new discrepancy report after those changes; independent completeness checks, protocol finality, and authorization remain | Partly controlled | Gates B/C |
-| S08 | Retry, concurrent account/permit nonce use, or unknown broadcast causes duplicate authorization/payment | Medium | High | Week 7 deduplicates intents; Weeks 13-14 reserve account nonces, persist before broadcast, reuse exact signed transactions, and prove Anvil retry/replacement behavior. Week 19 separately reserves token permit nonces, persists unknown before release, and gates exact-calldata retry by observed transition. No broadcaster composition or cross-host coordination exists | Partly controlled | Gates B/D |
+| S08 | Retry, concurrent account/permit nonce use, or unknown/lost responses cause duplicate authorization/payment | Medium | High | Week 7 deduplicates intents; Weeks 13-14 reserve account nonces, persist before broadcast, reuse exact signed transactions, and prove Anvil retry/replacement behavior. Week 19 separately reserves token permit nonces, persists unknown before release, and gates exact-calldata retry by observed transition. Week 21 deterministically loses post-commit responses and proves exact retry/no-work plus no duplicate signing, accepted broadcast, receipt read, or Permit outcome edge. No broadcaster composition, automatic retry owner, hardware-failure proof, or cross-host coordination exists | Partly controlled | Gates B/D |
 | S09 | SQLite data is modified and effects, transaction attempts, or permit authorizations become unexplainable | Medium | Medium | Versioned migrations, `STRICT`/`CHECK`/foreign-key/trigger constraints, immutable facts, append-only identities, linked reversals, evidence copies, source/policy/unsigned fingerprints, EIP-712/calldata Keccak recomputation, and strict replay verification exist; backup, encryption, independent tamper evidence, and finalized balances remain | Partly controlled | Gates C/D |
 | S10 | Secret scanning exits successfully while its rules are ineffective | Low | High | Fixed scanner version plus a dynamic canary with a dedicated expected exit code | Controlled | Gate A |
 | S11 | An authentication or typed-data signature is replayed across relying parties, users, chains, browser contexts, or contracts | Medium | High | Weeks 15-17 fix SIWE relying-party facts, canonical recovery, restart-safe one-way consumption, browser binding, session rotation/revocation, and CSRF. Weeks 18-19 separately fix ERC-2612 domain/spender/value/nonce/deadline, runtime identity, canonical owner recovery, shared-file nonce reservation, and exact unknown retry. Front-running, cross-host coordination, rate limiting, production browser hosting, and ERC-1271 remain | Partly controlled | Gate E |

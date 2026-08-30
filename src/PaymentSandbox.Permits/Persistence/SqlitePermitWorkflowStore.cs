@@ -212,6 +212,25 @@ public sealed class SqlitePermitWorkflowStore(PermitWorkflowDatabase database)
             IsolationLevel.Serializable, deferred: false);
         PermitWorkflowSnapshot snapshot = await RequireAsync(
             connection, transaction, operationId, cancellationToken);
+        string kind = outcome == PermitSubmissionOutcome.Accepted
+            ? "submission_accepted"
+            : "submission_rejected";
+        if (await IsOutcomeReplayAsync(
+            connection,
+            transaction,
+            operationId,
+            authorizationTransitionId,
+            kind,
+            cancellationToken))
+        {
+            // The exact authorization/outcome edge is already durable. This
+            // is the expected recovery path when commit succeeded but the
+            // process lost the method response; never append a second edge.
+            await transaction.CommitAsync(cancellationToken);
+            return new PermitWorkflowCommitResult(
+                PermitWorkflowCommitDisposition.Replayed, snapshot);
+        }
+
         if (snapshot.LatestTransitionId != authorizationTransitionId ||
             snapshot.State != PermitWorkflowState.SubmissionUnknown)
         {
@@ -219,9 +238,6 @@ public sealed class SqlitePermitWorkflowStore(PermitWorkflowDatabase database)
                 "The submission outcome does not belong to the current authorization.");
         }
 
-        string kind = outcome == PermitSubmissionOutcome.Accepted
-            ? "submission_accepted"
-            : "submission_rejected";
         await InsertTransitionAsync(
             connection, transaction, operationId, kind, null,
             occurredAtUtc, cancellationToken);
@@ -229,6 +245,42 @@ public sealed class SqlitePermitWorkflowStore(PermitWorkflowDatabase database)
         return new PermitWorkflowCommitResult(
             PermitWorkflowCommitDisposition.Applied,
             (await GetAsync(operationId, cancellationToken))!);
+    }
+
+    private static async Task<bool> IsOutcomeReplayAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        PermitOperationId operationId,
+        long authorizationTransitionId,
+        string expectedOutcomeKind,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // Read the supplied authorization and its immediate successor in this
+        // operation's history. Global AUTOINCREMENT IDs need not be adjacent
+        // because another operation may commit between them.
+        command.CommandText =
+            """
+            SELECT transition_id, kind
+            FROM permit_state_transitions
+            WHERE operation_id = $operation
+              AND transition_id >= $authorization
+            ORDER BY transition_id
+            LIMIT 2;
+            """;
+        command.Parameters.AddWithValue("$operation", operationId.Value);
+        command.Parameters.AddWithValue("$authorization", authorizationTransitionId);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) ||
+            reader.GetInt64(0) != authorizationTransitionId ||
+            !string.Equals(reader.GetString(1), "submission_unknown", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return await reader.ReadAsync(cancellationToken) &&
+            string.Equals(reader.GetString(1), expectedOutcomeKind, StringComparison.Ordinal);
     }
 
     internal async ValueTask<PermitWorkflowCommitResult> RecordTerminalAsync(
