@@ -382,6 +382,9 @@
       "paymentsandbox.domain": {
         "type": "Project"
       },
+      "paymentsandbox.observability": {
+        "type": "Project"
+      },
       "paymentsandbox.permits": {
         "type": "Project",
         "dependencies": {
@@ -389,7 +392,8 @@
           "Nethereum.Signer.EIP712": "[6.1.0, )",
           "Nethereum.Util": "[6.1.0, )",
           "PaymentSandbox.Contracts": "[1.0.0, )",
-          "PaymentSandbox.Domain": "[1.0.0, )"
+          "PaymentSandbox.Domain": "[1.0.0, )",
+          "PaymentSandbox.Observability": "[1.0.0, )"
         }
       },
       "Nethereum.Web3": {

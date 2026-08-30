@@ -1,5 +1,6 @@
 using PaymentSandbox.Contracts.PaymentRouter;
 using PaymentSandbox.Domain.Evm;
+using PaymentSandbox.Observability;
 using PaymentSandbox.Orchestrator.Abstractions;
 using PaymentSandbox.Orchestrator.Persistence;
 using PaymentSandbox.Orchestrator.Policy;
@@ -18,6 +19,7 @@ public sealed class TransactionLifecycleProcessor
     private readonly ITransactionReceiptReader _receiptReader;
     private readonly ITransactionLifecycleStore _store;
     private readonly TimeProvider _timeProvider;
+    private readonly IOperationalTelemetry _telemetry;
 
     public TransactionLifecycleProcessor(
         TransactionLifecyclePolicy policy,
@@ -27,7 +29,8 @@ public sealed class TransactionLifecycleProcessor
         IRawTransactionBroadcaster broadcaster,
         ITransactionReceiptReader receiptReader,
         ITransactionLifecycleStore store,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOperationalTelemetry? telemetry = null)
     {
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         _router = router ?? throw new ArgumentNullException(nameof(router));
@@ -37,6 +40,10 @@ public sealed class TransactionLifecycleProcessor
         _receiptReader = receiptReader ?? throw new ArgumentNullException(nameof(receiptReader));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        // The default emits only provider-neutral .NET diagnostics. Tests and
+        // hosts may inject an implementation, but callers can never attach
+        // arbitrary labels through the workflow API.
+        _telemetry = telemetry ?? OperationalTelemetry.Shared;
 
         // Identity verification happened before the client existed. Refuse to
         // compose it with a policy for a different chain or Router.
@@ -48,9 +55,21 @@ public sealed class TransactionLifecycleProcessor
     }
 
     /// <summary>Reserves a nonce and persists the initial signed attempt, but does not broadcast.</summary>
-    public async Task<LifecycleCommitResult> CreateAsync(
+    public Task<LifecycleCommitResult> CreateAsync(
         PaymentTransactionRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.TransactionLifecycle,
+            OperationalAction.TransactionCreate,
+            token => CreateCoreAsync(request, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<LifecycleCommitResult> CreateCoreAsync(
+        PaymentTransactionRequest request,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         _policy.ValidateInitialRequest(request);
@@ -86,9 +105,21 @@ public sealed class TransactionLifecycleProcessor
     /// Broadcasts the current persisted payload. After an unknown outcome, a
     /// retry loads and sends the same bytes instead of signing another payment.
     /// </summary>
-    public async Task<LifecycleCommitResult> BroadcastAsync(
+    public Task<LifecycleCommitResult> BroadcastAsync(
         TransactionOperationId operationId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.TransactionLifecycle,
+            OperationalAction.TransactionBroadcast,
+            token => BroadcastCoreAsync(operationId, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<LifecycleCommitResult> BroadcastCoreAsync(
+        TransactionOperationId operationId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operationId);
         TransactionLifecycleSnapshot snapshot = await RequireSnapshotAsync(operationId, cancellationToken);
@@ -114,10 +145,23 @@ public sealed class TransactionLifecycleProcessor
     }
 
     /// <summary>Signs a fee-only replacement that preserves nonce and payment calldata.</summary>
-    public async Task<LifecycleCommitResult> ReplaceAsync(
+    public Task<LifecycleCommitResult> ReplaceAsync(
         TransactionOperationId operationId,
         TransactionFeeQuote replacementFee,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.TransactionLifecycle,
+            OperationalAction.TransactionReplace,
+            token => ReplaceCoreAsync(operationId, replacementFee, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<LifecycleCommitResult> ReplaceCoreAsync(
+        TransactionOperationId operationId,
+        TransactionFeeQuote replacementFee,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operationId);
         ArgumentNullException.ThrowIfNull(replacementFee);
@@ -152,9 +196,21 @@ public sealed class TransactionLifecycleProcessor
     }
 
     /// <summary>Queries every possibly submitted same-nonce attempt and records at most one receipt.</summary>
-    public async Task<LifecycleCommitResult> RefreshReceiptAsync(
+    public Task<LifecycleCommitResult> RefreshReceiptAsync(
         TransactionOperationId operationId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.TransactionLifecycle,
+            OperationalAction.TransactionRefreshReceipt,
+            token => RefreshReceiptCoreAsync(operationId, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<LifecycleCommitResult> RefreshReceiptCoreAsync(
+        TransactionOperationId operationId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operationId);
         TransactionLifecycleSnapshot snapshot = await RequireSnapshotAsync(operationId, cancellationToken);
@@ -297,4 +353,26 @@ public sealed class TransactionLifecycleProcessor
         CancellationToken cancellationToken) =>
         await _store.GetAsync(operationId, cancellationToken)
         ?? throw new KeyNotFoundException($"Transaction operation '{operationId.Value}' was not found.");
+
+    private static OperationalOutcome ClassifyResult(LifecycleCommitResult result) =>
+        result.Disposition switch
+        {
+            LifecycleCommitDisposition.Applied => OperationalOutcome.Applied,
+            LifecycleCommitDisposition.Replayed => OperationalOutcome.Replayed,
+            LifecycleCommitDisposition.NoWork => OperationalOutcome.NoWork,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(result), result.Disposition, "Unknown lifecycle disposition."),
+        };
+
+    private static OperationalFailureCode ClassifyFailure(Exception exception) => exception switch
+    {
+        ArgumentException or KeyNotFoundException => OperationalFailureCode.InvalidInput,
+        TransactionLifecycleConflictException => OperationalFailureCode.StateConflict,
+        // This legacy exception intentionally carries sanitized workflow text
+        // but no machine-readable subtype. Keep the metric equally coarse and
+        // never inspect its message to guess a more detailed category.
+        TransactionLifecycleException => OperationalFailureCode.WorkflowRejected,
+        Microsoft.Data.Sqlite.SqliteException => OperationalFailureCode.PersistenceFailure,
+        _ => OperationalFailureCode.Unexpected,
+    };
 }

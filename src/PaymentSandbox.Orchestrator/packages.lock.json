@@ -271,6 +271,9 @@
       "paymentsandbox.domain": {
         "type": "Project"
       },
+      "paymentsandbox.observability": {
+        "type": "Project"
+      },
       "Newtonsoft.Json": {
         "type": "CentralTransitive",
         "requested": "[13.0.4, )",

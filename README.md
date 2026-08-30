@@ -7,9 +7,9 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-19 complete; Week 20 is next.
+**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-20 complete; Week 21 is next.
 
-Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots, Week 12 appends explainable per-payment reconciliation reports over atomic Intent/Ledger/Finality snapshots, Week 13 adds a durable test-only transaction lifecycle, Week 14 adds ephemeral loopback-Anvil signing, Week 15 adds bounded EOA SIWE challenge verification, Week 16 makes that one-time challenge state durable in SQLite, Week 17 composes it into a loopback-only browser-flow/session boundary, Week 18 constructs and verifies a separate strict ERC-2612 typed-data boundary without holding a wallet key, and Week 19 adds exact-block token preflight plus durable nonce/submission coordination.
+Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots, Week 12 appends explainable per-payment reconciliation reports over atomic Intent/Ledger/Finality snapshots, Week 13 adds a durable test-only transaction lifecycle, Week 14 adds ephemeral loopback-Anvil signing, Week 15 adds bounded EOA SIWE challenge verification, Week 16 makes that one-time challenge state durable in SQLite, Week 17 composes it into a loopback-only browser-flow/session boundary, Week 18 constructs and verifies a separate strict ERC-2612 typed-data boundary without holding a wallet key, Week 19 adds exact-block token preflight plus durable nonce/submission coordination, and Week 20 wraps the two payload-release workflows in bounded, provider-neutral operational telemetry.
 
 Implemented in the current repository:
 
@@ -158,6 +158,8 @@ Do not add a private key to `.env.example`, source files, command history, test 
 | `tests/PaymentSandbox.Authentication.Tests/` | Canonical/signature, migration, restart, expiry, capacity, session, rotation, and concurrency evidence.                 |
 | `src/PaymentSandbox.Permits/`              | Strict ERC-2612 EIP-712 construction, exact-block token preflight, durable nonce reservation, and fail-safe calldata release. |
 | `tests/PaymentSandbox.Permits.Tests/`       | Typed-data/signature, raw RPC, migration, restart, concurrency, corruption, redaction, and Router-binding evidence.     |
+| `src/PaymentSandbox.Observability/`        | Dependency-free Activity/metric contract with compile-time-bounded, payload-blind labels.                              |
+| `tests/PaymentSandbox.Observability.Tests/` | Real listener evidence for trace shape, balanced metrics, cancellation, and exception-detail non-disclosure.           |
 | `src/PaymentSandbox.Domain/`               | Pure domain values and invariants; no RPC, database, ASP.NET, or signer dependencies.                                    |
 | `tests/PaymentSandbox.Domain.Tests/`       | Executable specifications for the Domain project.                                                                        |
 | `src/PaymentSandbox.Contracts/`            | Typed Router ABI projection, read-only identity RPC adapter, trust policy, and verified local calldata encoder.          |
@@ -422,6 +424,15 @@ not broadcast, observe a receipt, prove provider honesty, or identify which
 transaction changed a token nonce. See the
 [Week 19 permit workflow guide](docs/learning/week-19-erc2612-preflight-workflow.md).
 
+Week 20 adds a dependency-free `PaymentSandbox.Observability` boundary using
+.NET `ActivitySource` and `Meter`. Permit and transaction lifecycle operations
+emit only fixed component/action/outcome/failure labels plus duration and active
+counts. Addresses, IDs, signatures, calldata, signed transactions, RPC URLs,
+exception text, and exception objects cannot be supplied through the telemetry
+contract. This is instrumentation only: no exporter, backend, dashboard, alert,
+sampling policy, or secure audit log is configured. See the
+[Week 20 operational telemetry guide](docs/learning/week-20-safe-operational-telemetry.md).
+
 The 2026-08-30 Week 13 committed-snapshot verification passed 223/223 .NET
 tests, including 30/30 focused Orchestrator tests. All 36 unchanged Foundry
 tests, the 1,030-byte/zero-slot Router baseline, and successful/reverted Anvil
@@ -507,7 +518,7 @@ jobs.
 - Raw on-chain values remain exact integers. Formatting is an edge concern.
 - Contract-baseline drift requires explicit interface, bytecode, dependency, and downstream-consumer review.
 
-See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), [Week 6](docs/learning/week-06-payment-intent-api.md), [Week 7](docs/learning/week-07-sqlite-persistence.md), [Week 8](docs/learning/week-08-chain-observation-checkpoints.md), [Week 9](docs/learning/week-09-reorg-canonicality.md), [Week 10](docs/learning/week-10-reversible-ledger.md), [Week 11](docs/learning/week-11-confirmation-finality.md), [Week 12](docs/learning/week-12-reconciliation.md), [Week 13](docs/learning/week-13-transaction-lifecycle.md), [Week 14](docs/learning/week-14-ephemeral-anvil-signing.md), [Week 15](docs/learning/week-15-siwe-challenge-verification.md), [Week 16](docs/learning/week-16-sqlite-siwe-challenges.md), [Week 17](docs/learning/week-17-loopback-siwe-sessions.md), [Week 18](docs/learning/week-18-erc2612-permit-construction.md), and [Week 19](docs/learning/week-19-erc2612-preflight-workflow.md) learning guides for the rationale and evidence.
+See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), [Week 6](docs/learning/week-06-payment-intent-api.md), [Week 7](docs/learning/week-07-sqlite-persistence.md), [Week 8](docs/learning/week-08-chain-observation-checkpoints.md), [Week 9](docs/learning/week-09-reorg-canonicality.md), [Week 10](docs/learning/week-10-reversible-ledger.md), [Week 11](docs/learning/week-11-confirmation-finality.md), [Week 12](docs/learning/week-12-reconciliation.md), [Week 13](docs/learning/week-13-transaction-lifecycle.md), [Week 14](docs/learning/week-14-ephemeral-anvil-signing.md), [Week 15](docs/learning/week-15-siwe-challenge-verification.md), [Week 16](docs/learning/week-16-sqlite-siwe-challenges.md), [Week 17](docs/learning/week-17-loopback-siwe-sessions.md), [Week 18](docs/learning/week-18-erc2612-permit-construction.md), [Week 19](docs/learning/week-19-erc2612-preflight-workflow.md), and [Week 20](docs/learning/week-20-safe-operational-telemetry.md) learning guides for the rationale and evidence.
 
 ## Roadmap
 
@@ -532,7 +543,8 @@ See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/de
 | Week 17            | **Complete:** bounded loopback HTTP login/session, exact Origin, browser binding, secure cookies, rotation, CSRF logout, revocation, and restart evidence.                          |
 | Week 18            | **Complete:** canonical ERC-2612 EIP-712 construction, external EOA verification, checked non-relayed Router calldata, and local committed-snapshot evidence.                         |
 | Week 19            | **Complete:** exact-block token code/domain/nonce preflight, durable nonce reservation, immutable calldata, and append-only unknown/retry coordination.                           |
-| Weeks 20-24        | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                          |
+| Week 20            | **Complete:** payload-blind Activity/metrics instrumentation with bounded labels across Permit and transaction lifecycle boundaries.                                              |
+| Weeks 21-24        | Add fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                                         |
 
 Each later capability must arrive with its failure cases and boundary documentation. A roadmap item is not an implemented feature.
 

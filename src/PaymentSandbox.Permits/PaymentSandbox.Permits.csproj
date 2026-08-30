@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\PaymentSandbox.Contracts\PaymentSandbox.Contracts.csproj" />
     <ProjectReference Include="..\PaymentSandbox.Domain\PaymentSandbox.Domain.csproj" />
+    <ProjectReference Include="..\PaymentSandbox.Observability\PaymentSandbox.Observability.csproj" />
   </ItemGroup>
 </Project>

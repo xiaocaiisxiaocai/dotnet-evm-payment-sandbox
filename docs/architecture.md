@@ -4,18 +4,19 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 19, including the accepted Gate A baseline; and
+1. the implementation through Week 20, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 19
+## Implemented architecture through Week 20
 
 ```mermaid
 flowchart LR
     SDK[global.json] --> Build[.NET build settings]
     Packages[central package versions<br/>and lock files] --> Build
     Build --> Domain[PaymentSandbox.Domain]
+    Build --> Observability[PaymentSandbox.Observability<br/>bounded Activity + metrics]
     Domain --> DomainTests[Domain tests<br/>xUnit v3 + MTP]
     Domain --> Authentication[PaymentSandbox.Authentication<br/>strict EOA SIWE]
     Authentication --> ChallengeDb[(SQLite challenge + browser session state<br/>owned migrations + capacities)]
@@ -38,6 +39,7 @@ flowchart LR
     RPC -. exact-block token code,<br/>domain + owner nonce .-> Permits
     Permits --> PermitDb[(SQLite nonce reservations,<br/>immutable calldata + transitions)]
     Permits --> PermitTests[Hashes + raw RPC + SQLite<br/>restart/concurrency/corruption tests]
+    Observability --> Permits
     Domain --> Indexer[PaymentSandbox.Indexer]
     Contracts --> Indexer
     RPC -. exact chainId, blocks,<br/>and Router logs .-> Indexer
@@ -56,11 +58,13 @@ flowchart LR
     Reconcile --> ReconcileDb[(SQLite immutable reports,<br/>evidence copies, and differences)]
     Reconcile --> ReconcileTests[Classification + replay + five-database<br/>deep-reorg tests]
     Contracts --> Orchestrator[PaymentSandbox.Orchestrator]
+    Observability --> Orchestrator
     Orchestrator --> LifecycleDb[(SQLite operations, attempts,<br/>broadcasts, and receipts)]
     TestAdapters[Network-free lifecycle fakes] -.-> Orchestrator
     Ephemeral[Ephemeral Anvil key<br/>+ signed-field recovery] --> Orchestrator
     AnvilRpc[Loopback-only Anvil RPC<br/>nonce, raw send, receipt] --> Orchestrator
     Orchestrator --> OrchestratorTests[Policy + lifecycle + concurrency<br/>+ tamper tests]
+    Observability --> TelemetryTests[Real Activity/Meter listeners<br/>shape + non-disclosure tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
     Router --> ContractChecks[Example, permit, fuzz,<br/>and invariant tests]
@@ -160,6 +164,17 @@ append-only, and `submission_unknown` is durable before signature-bearing
 calldata escapes. Retry requires the caller's observed transition ID and returns
 the exact persisted bytes. No key, broadcaster, receipt observer, relayer, HTTP
 endpoint, finality, or payment authority is added.
+
+Week 20 adds a dependency-free instrumentation library below Permits and
+Orchestrator. Its injectable API starts a scope with fixed component/action
+enums; that scope accepts only a bounded outcome or failure code. A separate
+trusted helper reduces the business result or exception before notifying the
+scope, so the observer never receives either object. It emits internal
+Activities, a completion counter, duration histogram, and active-operation
+up/down counter. The workflows cannot attach arbitrary tags, identifiers,
+payloads, URLs, exception objects, or exception text. The repository tests this contract with real .NET listeners,
+but does not configure an exporter, telemetry backend, dashboard, alert,
+sampling policy, or production host.
 
 ### Transaction lifecycle boundary
 

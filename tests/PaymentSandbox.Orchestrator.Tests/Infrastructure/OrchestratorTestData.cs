@@ -5,6 +5,7 @@ using PaymentSandbox.Contracts.Identity;
 using PaymentSandbox.Contracts.PaymentRouter;
 using PaymentSandbox.Domain.Evm;
 using PaymentSandbox.Domain.Payments;
+using PaymentSandbox.Observability;
 using PaymentSandbox.Orchestrator.Abstractions;
 using PaymentSandbox.Orchestrator.Lifecycle;
 using PaymentSandbox.Orchestrator.Persistence;
@@ -56,7 +57,8 @@ internal static class OrchestratorTestData
         FakeNonceReader Nonces, DeterministicSigner Signer, FakeBroadcaster Broadcaster,
         FakeReceiptReader Receipts)> CreateProcessorAsync(
         TemporaryTransactionLifecycleDatabase temporary,
-        TransactionLifecyclePolicy? policy = null)
+        TransactionLifecyclePolicy? policy = null,
+        IOperationalTelemetry? telemetry = null)
     {
         TransactionLifecycleDatabase database = temporary.Create();
         await database.InitializeAsync();
@@ -67,7 +69,7 @@ internal static class OrchestratorTestData
         var receipts = new FakeReceiptReader();
         var processor = new TransactionLifecycleProcessor(
             policy ?? Policy(), await ConnectRouterAsync(), nonces, signer,
-            broadcaster, receipts, store, TimeProvider);
+            broadcaster, receipts, store, TimeProvider, telemetry);
         return (store, processor, nonces, signer, broadcaster, receipts);
     }
 

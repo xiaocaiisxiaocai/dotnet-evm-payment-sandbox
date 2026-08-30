@@ -7,6 +7,7 @@
     <Project Path="src/PaymentSandbox.Finality/PaymentSandbox.Finality.csproj" />
     <Project Path="src/PaymentSandbox.Indexer/PaymentSandbox.Indexer.csproj" />
     <Project Path="src/PaymentSandbox.Ledger/PaymentSandbox.Ledger.csproj" />
+    <Project Path="src/PaymentSandbox.Observability/PaymentSandbox.Observability.csproj" />
     <Project Path="src/PaymentSandbox.Orchestrator/PaymentSandbox.Orchestrator.csproj" />
     <Project Path="src/PaymentSandbox.Permits/PaymentSandbox.Permits.csproj" />
     <Project Path="src/PaymentSandbox.Reconciliation/PaymentSandbox.Reconciliation.csproj" />
@@ -19,6 +20,7 @@
     <Project Path="tests/PaymentSandbox.Finality.Tests/PaymentSandbox.Finality.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Indexer.Tests/PaymentSandbox.Indexer.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Ledger.Tests/PaymentSandbox.Ledger.Tests.csproj" />
+    <Project Path="tests/PaymentSandbox.Observability.Tests/PaymentSandbox.Observability.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Orchestrator.Anvil/PaymentSandbox.Orchestrator.Anvil.csproj" />
     <Project Path="tests/PaymentSandbox.Orchestrator.Tests/PaymentSandbox.Orchestrator.Tests.csproj" />
     <Project Path="tests/PaymentSandbox.Permits.Tests/PaymentSandbox.Permits.Tests.csproj" />

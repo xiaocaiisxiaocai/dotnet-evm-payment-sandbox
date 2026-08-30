@@ -1,6 +1,7 @@
 using PaymentSandbox.Contracts.PaymentRouter;
 using PaymentSandbox.Domain.Evm;
 using PaymentSandbox.Domain.Payments;
+using PaymentSandbox.Observability;
 using PaymentSandbox.Permits.Erc2612;
 using PaymentSandbox.Permits.Persistence;
 using PaymentSandbox.Permits.Preflight;
@@ -17,17 +18,23 @@ public sealed class Erc2612PermitWorkflow
     private readonly Erc2612PermitPreflightService _preflight;
     private readonly SqlitePermitWorkflowStore _store;
     private readonly TimeProvider _timeProvider;
+    private readonly IOperationalTelemetry _telemetry;
 
     public Erc2612PermitWorkflow(
         Erc2612PermitService permitService,
         Erc2612PermitPreflightService preflight,
         SqlitePermitWorkflowStore store,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOperationalTelemetry? telemetry = null)
     {
         _permitService = permitService ?? throw new ArgumentNullException(nameof(permitService));
         _preflight = preflight ?? throw new ArgumentNullException(nameof(preflight));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        // OperationalTelemetry exposes only bounded labels. In particular,
+        // this workflow never gives the injected observer a signature, typed
+        // data document, calldata value, wallet address, or operation ID.
+        _telemetry = telemetry ?? OperationalTelemetry.Shared;
     }
 
     /// <summary>
@@ -35,10 +42,23 @@ public sealed class Erc2612PermitWorkflow
     /// wallet-readable typed data. Concurrent callers sharing the database can
     /// create only one operation for the same chain/token/owner/nonce tuple.
     /// </summary>
-    public async Task<PermitWorkflowCommitResult> ReserveAsync(
+    public Task<PermitWorkflowCommitResult> ReserveAsync(
         EvmAddress owner,
         RawTokenAmount value,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.PermitWorkflow,
+            OperationalAction.PermitReserve,
+            token => ReserveCoreAsync(owner, value, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<PermitWorkflowCommitResult> ReserveCoreAsync(
+        EvmAddress owner,
+        RawTokenAmount value,
+        CancellationToken cancellationToken)
     {
         VerifiedErc2612TokenSnapshot observation = await _preflight.ObserveAsync(
             owner, cancellationToken).ConfigureAwait(false);
@@ -53,13 +73,30 @@ public sealed class Erc2612PermitWorkflow
     /// Verifies the external signature, constructs exact Router calldata, and
     /// persists the signature-bearing bytes for restart-safe identical retry.
     /// </summary>
-    public async Task<PermitWorkflowCommitResult> VerifyAndPrepareAsync(
+    public Task<PermitWorkflowCommitResult> VerifyAndPrepareAsync(
         PermitOperationId operationId,
         string signature,
         VerifiedPaymentRouterClient router,
         PaymentId paymentId,
         EvmAddress merchant,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.PermitWorkflow,
+            OperationalAction.PermitPrepare,
+            token => VerifyAndPrepareCoreAsync(
+                operationId, signature, router, paymentId, merchant, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<PermitWorkflowCommitResult> VerifyAndPrepareCoreAsync(
+        PermitOperationId operationId,
+        string signature,
+        VerifiedPaymentRouterClient router,
+        PaymentId paymentId,
+        EvmAddress merchant,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operationId);
         PermitWorkflowSnapshot snapshot = await RequireAsync(operationId, cancellationToken);
@@ -82,9 +119,21 @@ public sealed class Erc2612PermitWorkflow
     /// before releasing calldata. A crash after return therefore resumes as an
     /// ambiguous submission and cannot silently create a new permit.
     /// </summary>
-    public async Task<PermitSubmissionAuthorization?> BeginSubmissionAsync(
+    public Task<PermitSubmissionAuthorization?> BeginSubmissionAsync(
         PermitOperationId operationId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync<PermitSubmissionAuthorization?>(
+            _telemetry,
+            OperationalComponent.PermitWorkflow,
+            OperationalAction.PermitBeginSubmission,
+            token => BeginSubmissionCoreAsync(operationId, token),
+            ClassifyAuthorization,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<PermitSubmissionAuthorization?> BeginSubmissionCoreAsync(
+        PermitOperationId operationId,
+        CancellationToken cancellationToken)
     {
         PermitWorkflowSnapshot snapshot = await RequireAsync(operationId, cancellationToken);
         if (snapshot.State != PermitWorkflowState.Prepared)
@@ -102,10 +151,23 @@ public sealed class Erc2612PermitWorkflow
     /// competing callers that saw that same transition cannot both win the
     /// database compare-and-append operation.
     /// </summary>
-    public async Task<PermitSubmissionAuthorization?> RetryUnknownAsync(
+    public Task<PermitSubmissionAuthorization?> RetryUnknownAsync(
         PermitOperationId operationId,
         long observedTransitionId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync<PermitSubmissionAuthorization?>(
+            _telemetry,
+            OperationalComponent.PermitWorkflow,
+            OperationalAction.PermitRetrySubmission,
+            token => RetryUnknownCoreAsync(operationId, observedTransitionId, token),
+            ClassifyAuthorization,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<PermitSubmissionAuthorization?> RetryUnknownCoreAsync(
+        PermitOperationId operationId,
+        long observedTransitionId,
+        CancellationToken cancellationToken)
     {
         if (observedTransitionId <= 0)
         {
@@ -132,7 +194,20 @@ public sealed class Erc2612PermitWorkflow
     public ValueTask<PermitWorkflowCommitResult> RecordSubmissionOutcomeAsync(
         PermitSubmissionAuthorization authorization,
         PermitSubmissionOutcome outcome,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => new(
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.PermitWorkflow,
+            OperationalAction.PermitRecordOutcome,
+            token => RecordSubmissionOutcomeCoreAsync(authorization, outcome, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken));
+
+    private Task<PermitWorkflowCommitResult> RecordSubmissionOutcomeCoreAsync(
+        PermitSubmissionAuthorization authorization,
+        PermitSubmissionOutcome outcome,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(authorization);
         return _store.RecordOutcomeAsync(
@@ -140,16 +215,28 @@ public sealed class Erc2612PermitWorkflow
             authorization.AuthorizationTransitionId,
             outcome,
             _timeProvider.GetUtcNow(),
-            cancellationToken);
+            cancellationToken).AsTask();
     }
 
     /// <summary>
     /// Reobserves usability without inferring which transaction advanced a
     /// token nonce. A changed nonce is recorded as changed, never as consumed.
     /// </summary>
-    public async Task<PermitWorkflowCommitResult> RefreshUsabilityAsync(
+    public Task<PermitWorkflowCommitResult> RefreshUsabilityAsync(
         PermitOperationId operationId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OperationalExecution.ObserveAsync(
+            _telemetry,
+            OperationalComponent.PermitWorkflow,
+            OperationalAction.PermitRefreshUsability,
+            token => RefreshUsabilityCoreAsync(operationId, token),
+            ClassifyResult,
+            ClassifyFailure,
+            cancellationToken);
+
+    private async Task<PermitWorkflowCommitResult> RefreshUsabilityCoreAsync(
+        PermitOperationId operationId,
+        CancellationToken cancellationToken)
     {
         PermitWorkflowSnapshot snapshot = await RequireAsync(operationId, cancellationToken);
         if (snapshot.State is PermitWorkflowState.Expired or
@@ -238,4 +325,33 @@ public sealed class Erc2612PermitWorkflow
         await _store.GetAsync(operationId, cancellationToken).ConfigureAwait(false)
         ?? throw new KeyNotFoundException(
             $"Permit operation '{operationId.Value}' was not found.");
+
+    private static OperationalOutcome ClassifyResult(PermitWorkflowCommitResult result) =>
+        result.Disposition switch
+        {
+            PermitWorkflowCommitDisposition.Created => OperationalOutcome.Created,
+            PermitWorkflowCommitDisposition.Replayed => OperationalOutcome.Replayed,
+            PermitWorkflowCommitDisposition.Applied => OperationalOutcome.Applied,
+            PermitWorkflowCommitDisposition.NoWork => OperationalOutcome.NoWork,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(result), result.Disposition, "Unknown permit disposition."),
+        };
+
+    private static OperationalOutcome ClassifyAuthorization(
+        PermitSubmissionAuthorization? authorization) =>
+        authorization is null ? OperationalOutcome.NoWork : OperationalOutcome.Applied;
+
+    private static OperationalFailureCode ClassifyFailure(Exception exception) => exception switch
+    {
+        ArgumentException or KeyNotFoundException => OperationalFailureCode.InvalidInput,
+        PermitWorkflowException => OperationalFailureCode.StateConflict,
+        Erc2612PermitException => OperationalFailureCode.PolicyRejected,
+        Erc2612PreflightException preflight when
+            preflight.Code is Erc2612PreflightErrorCode.ObservationFailed or
+                Erc2612PreflightErrorCode.InvalidObservation =>
+            OperationalFailureCode.DependencyFailure,
+        Erc2612PreflightException => OperationalFailureCode.PolicyRejected,
+        Microsoft.Data.Sqlite.SqliteException => OperationalFailureCode.PersistenceFailure,
+        _ => OperationalFailureCode.Unexpected,
+    };
 }

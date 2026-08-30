@@ -1,5 +1,6 @@
 using PaymentSandbox.Domain.Evm;
 using PaymentSandbox.Domain.Payments;
+using PaymentSandbox.Observability;
 using PaymentSandbox.Permits.Tests.Infrastructure;
 using PaymentSandbox.Permits.Workflow;
 
@@ -7,6 +8,37 @@ namespace PaymentSandbox.Permits.Tests.Workflow;
 
 public sealed class Erc2612PermitWorkflowTests
 {
+    [Fact]
+    public async Task BoundaryTelemetry_ClassifiesReservationReplayWithoutPermitMaterial()
+    {
+        await using var temporary = new TemporaryPermitDatabase();
+        var telemetry = new RecordingOperationalTelemetry();
+        var wallet = new PermitWorkflowTestData.TestWallet();
+        PermitWorkflowTestData.WorkflowFixture components =
+            await PermitWorkflowTestData.CreateWorkflowAsync(
+                temporary, telemetry: telemetry);
+
+        await components.Workflow.ReserveAsync(
+            wallet.Address, new RawTokenAmount(42), TestContext.Current.CancellationToken);
+        await components.Workflow.ReserveAsync(
+            wallet.Address, new RawTokenAmount(42), TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [
+                new OperationalObservation(
+                    OperationalComponent.PermitWorkflow,
+                    OperationalAction.PermitReserve,
+                    OperationalOutcome.Created,
+                    OperationalFailureCode.None),
+                new OperationalObservation(
+                    OperationalComponent.PermitWorkflow,
+                    OperationalAction.PermitReserve,
+                    OperationalOutcome.Replayed,
+                    OperationalFailureCode.None),
+            ],
+            telemetry.Observations);
+    }
+
     [Fact]
     public async Task Reserve_UsesObservedNonceAndSurvivesRestart()
     {

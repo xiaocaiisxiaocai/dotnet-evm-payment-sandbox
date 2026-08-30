@@ -1,3 +1,4 @@
+using PaymentSandbox.Observability;
 using PaymentSandbox.Orchestrator.Abstractions;
 using PaymentSandbox.Orchestrator.Lifecycle;
 using PaymentSandbox.Orchestrator.Tests.Infrastructure;
@@ -7,6 +8,34 @@ namespace PaymentSandbox.Orchestrator.Tests.Lifecycle;
 
 public sealed class TransactionLifecycleProcessorTests
 {
+    [Fact]
+    public async Task BoundaryTelemetry_ClassifiesMutationAndNoWorkWithoutPayloadLabels()
+    {
+        await using var temporary = new TemporaryTransactionLifecycleDatabase();
+        var telemetry = new RecordingOperationalTelemetry();
+        var components = await OrchestratorTestData.CreateProcessorAsync(
+            temporary, telemetry: telemetry);
+        PaymentTransactionRequest request = OrchestratorTestData.Request();
+
+        await components.Processor.CreateAsync(request, TestContext.Current.CancellationToken);
+        await components.Processor.CreateAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [
+                new OperationalObservation(
+                    OperationalComponent.TransactionLifecycle,
+                    OperationalAction.TransactionCreate,
+                    OperationalOutcome.Applied,
+                    OperationalFailureCode.None),
+                new OperationalObservation(
+                    OperationalComponent.TransactionLifecycle,
+                    OperationalAction.TransactionCreate,
+                    OperationalOutcome.NoWork,
+                    OperationalFailureCode.None),
+            ],
+            telemetry.Observations);
+    }
+
     [Fact]
     public async Task Create_ReservesAndSignsWithoutBroadcasting()
     {

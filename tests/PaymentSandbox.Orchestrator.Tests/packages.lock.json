@@ -379,13 +379,17 @@
       "paymentsandbox.domain": {
         "type": "Project"
       },
+      "paymentsandbox.observability": {
+        "type": "Project"
+      },
       "paymentsandbox.orchestrator": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.11, )",
           "Nethereum.Web3": "[6.1.0, )",
           "PaymentSandbox.Contracts": "[1.0.0, )",
-          "PaymentSandbox.Domain": "[1.0.0, )"
+          "PaymentSandbox.Domain": "[1.0.0, )",
+          "PaymentSandbox.Observability": "[1.0.0, )"
         }
       },
       "Nethereum.Web3": {

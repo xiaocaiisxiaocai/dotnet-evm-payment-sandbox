@@ -254,6 +254,9 @@
       "paymentsandbox.domain": {
         "type": "Project"
       },
+      "paymentsandbox.observability": {
+        "type": "Project"
+      },
       "Nethereum.Web3": {
         "type": "CentralTransitive",
         "requested": "[6.1.0, )",

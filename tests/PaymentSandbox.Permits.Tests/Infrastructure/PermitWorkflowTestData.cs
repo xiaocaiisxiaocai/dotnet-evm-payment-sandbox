@@ -5,6 +5,7 @@ using Nethereum.Util;
 using PaymentSandbox.Contracts.Identity;
 using PaymentSandbox.Contracts.PaymentRouter;
 using PaymentSandbox.Domain.Evm;
+using PaymentSandbox.Observability;
 using PaymentSandbox.Permits.Erc2612;
 using PaymentSandbox.Permits.Persistence;
 using PaymentSandbox.Permits.Preflight;
@@ -50,7 +51,8 @@ internal static class PermitWorkflowTestData
         TemporaryPermitDatabase temporary,
         MutableTokenSnapshotRpc? rpc = null,
         MutableTimeProvider? clock = null,
-        int capacity = 1_024)
+        int capacity = 1_024,
+        IOperationalTelemetry? telemetry = null)
     {
         clock ??= new MutableTimeProvider(Now);
         rpc ??= new MutableTokenSnapshotRpc(TrustPolicy(), nonce: 7);
@@ -62,7 +64,7 @@ internal static class PermitWorkflowTestData
         Erc2612PermitPolicy policy = PermitPolicy();
         var permit = new Erc2612PermitService(policy, clock);
         var preflight = new Erc2612PermitPreflightService(TrustPolicy(), rpc);
-        var workflow = new Erc2612PermitWorkflow(permit, preflight, store, clock);
+        var workflow = new Erc2612PermitWorkflow(permit, preflight, store, clock, telemetry);
         return new WorkflowFixture(workflow, store, database, rpc, clock);
     }
 

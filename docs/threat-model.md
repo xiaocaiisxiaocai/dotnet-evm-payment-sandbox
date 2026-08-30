@@ -1,6 +1,6 @@
 # Threat Model v1
 
-- Status: Week 19 exact-block ERC-2612 preflight/workflow update to the Week 1 security baseline
+- Status: Week 20 payload-blind operational telemetry update to the Week 1 security baseline
 - Last updated: 2026-08-30
 - Owner: repository maintainer
 
@@ -64,6 +64,7 @@ Boundary assumptions:
 - Database paths are operator-controlled configuration. Week 7 resolves one absolute path, runs known migrations before listening, rejects future schema versions, and uses parameterized SQL. A local database file remains mutable, unencrypted application data rather than a trust anchor.
 - Pull-request code is untrusted input. CI has no deployment key, does not use `pull_request_target`, retains no checkout credentials, and receives only `contents: read` permission.
 - Local SQLite files and logs do not provide production-grade confidentiality or tamper resistance.
+- Operational telemetry is an exfiltration and resource-exhaustion boundary. Week 20 permits only compile-time-bounded component/action/outcome/failure labels and never passes signatures, calldata, signed transactions, addresses, identifiers, RPC URLs, or exception details to instrumentation. No exporter or backend is configured; a future host must separately review exporter defaults, resource attributes, access, retention, and cost controls.
 
 ## 4. Assets
 
