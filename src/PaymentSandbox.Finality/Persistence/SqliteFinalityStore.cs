@@ -26,6 +26,55 @@ public sealed class SqliteFinalityStore(FinalityDatabase database) : IFinalitySt
         return await ReadCheckpointAsync(connection, null, chainId, router, cancellationToken);
     }
 
+    public async ValueTask<FinalityReadSnapshot> GetSnapshotAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateStream(chainId, router);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT c.last_ledger_entry_id, c.ledger_checkpoint_revision,
+                   c.last_indexer_transition_id, c.head_block_number,
+                   c.head_block_hash, c.head_checkpoint_revision, c.revision,
+                   c.policy_id, c.required_confirmation_count, c.policy_fingerprint,
+                   c.last_batch_fingerprint, c.updated_at_utc,
+                   (SELECT COALESCE(MAX(transition_id), 0)
+                    FROM payment_finality_transitions) AS transition_high_watermark
+            FROM (SELECT 1) AS singleton
+            LEFT JOIN finality_checkpoints AS c
+              ON c.chain_id = $chainId AND c.router_address = $routerAddress;
+            """;
+        AddStreamParameters(command, chainId, router);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The singleton Finality snapshot query returned no row.");
+        }
+
+        FinalityCheckpoint? checkpoint = reader.IsDBNull(0)
+            ? null
+            : new FinalityCheckpoint(
+                chainId,
+                router,
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                reader.GetInt64(2),
+                reader.GetInt64(3),
+                EvmHash.Parse(reader.GetString(4)),
+                reader.GetInt64(5),
+                reader.GetInt64(6),
+                reader.GetString(7),
+                reader.GetInt64(8),
+                reader.GetString(9),
+                reader.GetString(10),
+                ParseTimestamp(reader.GetString(11)));
+        return new FinalityReadSnapshot(checkpoint, reader.GetInt64(12));
+    }
+
     public async ValueTask<FinalityCommitResult> CommitAsync(
         FinalityCheckpoint? expectedPrevious,
         FinalityEvaluationBatch batch,
@@ -155,6 +204,68 @@ public sealed class SqliteFinalityStore(FinalityDatabase database) : IFinalitySt
             """;
         AddStreamParameters(command, chainId, router);
         command.Parameters.AddWithValue("$ledgerEffectEntryId", ledgerEffectEntryId);
+        var transitions = new List<FinalityTransition>();
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            transitions.Add(new FinalityTransition(
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                ParseKind(reader.GetString(2)),
+                ledgerEffectEntryId,
+                ReadNullableInt64(reader, 3),
+                chainId,
+                router,
+                reader.GetInt64(4),
+                EvmHash.Parse(reader.GetString(5)),
+                reader.GetInt64(6),
+                reader.GetInt64(7),
+                reader.GetInt64(8),
+                ParseReason(reader.GetString(9)),
+                ParseTimestamp(reader.GetString(10))));
+        }
+
+        return transitions;
+    }
+
+    public async ValueTask<IReadOnlyList<FinalityTransition>> GetTransitionsThroughAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        long ledgerEffectEntryId,
+        long throughTransitionId,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateStream(chainId, router);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(ledgerEffectEntryId);
+        ArgumentOutOfRangeException.ThrowIfNegative(throughTransitionId);
+        if (maxCount is < 1 or > 100_001)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxCount),
+                "A Finality transition read must request between 1 and 100,001 rows.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT transition_id, finality_revision, kind, revokes_transition_id,
+                   head_block_number, head_block_hash, head_checkpoint_revision,
+                   confirmation_count, required_confirmation_count, reason,
+                   recorded_at_utc
+            FROM payment_finality_transitions
+            WHERE chain_id = $chainId AND router_address = $routerAddress
+              AND ledger_effect_entry_id = $ledgerEffectEntryId
+              AND transition_id <= $throughTransitionId
+            ORDER BY transition_id
+            LIMIT $maxCount;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$ledgerEffectEntryId", ledgerEffectEntryId);
+        command.Parameters.AddWithValue("$throughTransitionId", throughTransitionId);
+        command.Parameters.AddWithValue("$maxCount", maxCount);
         var transitions = new List<FinalityTransition>();
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

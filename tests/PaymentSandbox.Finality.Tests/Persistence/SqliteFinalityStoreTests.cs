@@ -78,8 +78,22 @@ public sealed class SqliteFinalityStoreTests
                 [effect]),
             TestContext.Current.CancellationToken);
         FinalityTransition transition = Assert.Single(await GetTransitionsAsync(store, 1));
+        FinalityReadSnapshot snapshot = await store.GetSnapshotAsync(
+            FinalityTestData.ChainId,
+            FinalityTestData.Router,
+            TestContext.Current.CancellationToken);
+        IReadOnlyList<FinalityTransition> bounded = await store.GetTransitionsThroughAsync(
+            FinalityTestData.ChainId,
+            FinalityTestData.Router,
+            ledgerEffectEntryId: 1,
+            throughTransitionId: snapshot.TransitionHighWatermark,
+            maxCount: 10,
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.QualificationCount);
+        Assert.Equal(result.Checkpoint, snapshot.Checkpoint);
+        Assert.Equal(transition.TransitionId, snapshot.TransitionHighWatermark);
+        Assert.Equal([transition], bounded);
         Assert.Equal(FinalityTransitionKind.ConfirmationQualified, transition.Kind);
         Assert.Equal(3, transition.ConfirmationCount);
         Assert.Equal(FinalityTransitionReason.ConfirmationThresholdReached, transition.Reason);

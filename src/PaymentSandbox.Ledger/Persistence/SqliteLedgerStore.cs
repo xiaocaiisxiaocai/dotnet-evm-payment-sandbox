@@ -104,6 +104,44 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
         return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
+    public async ValueTask<LedgerReadSnapshot> GetSnapshotAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateStream(chainId, router);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT c.last_source_transition_id, c.revision,
+                   c.last_batch_fingerprint, c.updated_at_utc,
+                   (SELECT COALESCE(MAX(entry_id), 0)
+                    FROM canonical_payment_ledger_entries) AS entry_high_watermark
+            FROM (SELECT 1) AS singleton
+            LEFT JOIN ledger_checkpoints AS c
+              ON c.chain_id = $chainId AND c.router_address = $routerAddress;
+            """;
+        AddStreamParameters(command, chainId, router);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The singleton Ledger snapshot query returned no row.");
+        }
+
+        LedgerCheckpoint? checkpoint = reader.IsDBNull(0)
+            ? null
+            : new LedgerCheckpoint(
+                chainId,
+                router,
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                reader.GetString(2),
+                ParseTimestamp(reader.GetString(3)));
+        return new LedgerReadSnapshot(checkpoint, reader.GetInt64(4));
+    }
+
     public async ValueTask<IReadOnlyList<LedgerEntry>> GetEntriesAsync(
         EvmChainId chainId,
         EvmAddress router,
@@ -139,6 +177,47 @@ public sealed class SqliteLedgerStore(LedgerDatabase database) : ILedgerStore
             """;
         AddStreamParameters(command, chainId, router);
         command.Parameters.AddWithValue("$afterEntryId", afterEntryId);
+        command.Parameters.AddWithValue("$throughEntryId", throughEntryId);
+        command.Parameters.AddWithValue("$maxCount", maxCount);
+        var entries = new List<LedgerEntry>();
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(ReadEntry(reader, chainId, router));
+        }
+
+        return entries;
+    }
+
+    public async ValueTask<IReadOnlyList<LedgerEntry>> GetEntriesByPaymentIdAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        PaymentId paymentId,
+        long throughEntryId,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateStream(chainId, router);
+        ArgumentNullException.ThrowIfNull(paymentId);
+        ArgumentOutOfRangeException.ThrowIfNegative(throughEntryId);
+        ValidateReadLimit(maxCount);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT entry_id, kind, source_transition_id, source_checkpoint_revision,
+                   block_number, block_hash, transaction_hash, log_index,
+                   payment_id, payer_address, token_address, merchant_address,
+                   amount_raw, reverses_entry_id, source_changed_at_utc, recorded_at_utc
+            FROM canonical_payment_ledger_entries
+            WHERE chain_id = $chainId AND router_address = $routerAddress
+              AND payment_id = $paymentId AND entry_id <= $throughEntryId
+            ORDER BY entry_id
+            LIMIT $maxCount;
+            """;
+        AddStreamParameters(command, chainId, router);
+        command.Parameters.AddWithValue("$paymentId", paymentId.Value);
         command.Parameters.AddWithValue("$throughEntryId", throughEntryId);
         command.Parameters.AddWithValue("$maxCount", maxCount);
         var entries = new List<LedgerEntry>();

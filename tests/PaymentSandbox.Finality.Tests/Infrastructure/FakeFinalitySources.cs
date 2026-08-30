@@ -1,4 +1,5 @@
 using PaymentSandbox.Domain.Evm;
+using PaymentSandbox.Domain.Payments;
 using PaymentSandbox.Indexer.Chain;
 using PaymentSandbox.Indexer.Persistence;
 using PaymentSandbox.Ledger.Entries;
@@ -67,6 +68,15 @@ internal sealed class FakeLedgerReader(
         return ValueTask.FromResult<LedgerCheckpoint?>(Checkpoint);
     }
 
+    public ValueTask<LedgerReadSnapshot> GetSnapshotAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(new LedgerReadSnapshot(Checkpoint, HighWatermark));
+    }
+
     public ValueTask<long> GetEntryHighWatermarkAsync(
         CancellationToken cancellationToken = default)
     {
@@ -88,6 +98,24 @@ internal sealed class FakeLedgerReader(
         IReadOnlyList<LedgerEntry> result = Entries
             .Where(item => item.ChainId == chainId && item.Router == router)
             .Where(item => item.EntryId > afterEntryId && item.EntryId <= throughEntryId)
+            .OrderBy(item => item.EntryId)
+            .Take(maxCount)
+            .ToArray();
+        return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyList<LedgerEntry>> GetEntriesByPaymentIdAsync(
+        EvmChainId chainId,
+        EvmAddress router,
+        PaymentId paymentId,
+        long throughEntryId,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<LedgerEntry> result = Entries
+            .Where(item => item.ChainId == chainId && item.Router == router)
+            .Where(item => item.PaymentId == paymentId && item.EntryId <= throughEntryId)
             .OrderBy(item => item.EntryId)
             .Take(maxCount)
             .ToArray();

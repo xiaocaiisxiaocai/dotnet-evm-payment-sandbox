@@ -265,17 +265,20 @@ public sealed class SqliteLedgerStoreTests
             BlockCanonicality.Noncanonical,
             payment);
 
-        long highWatermark = await store.GetEntryHighWatermarkAsync(
-            TestContext.Current.CancellationToken);
-        IReadOnlyList<LedgerEntry> entries = await store.GetEntriesAsync(
+        LedgerReadSnapshot snapshot = await store.GetSnapshotAsync(
             LedgerTestData.ChainId,
             LedgerTestData.Router,
-            afterEntryId: 0,
-            throughEntryId: highWatermark,
+            TestContext.Current.CancellationToken);
+        IReadOnlyList<LedgerEntry> entries = await store.GetEntriesByPaymentIdAsync(
+            LedgerTestData.ChainId,
+            LedgerTestData.Router,
+            payment.PaymentId,
+            throughEntryId: snapshot.EntryHighWatermark,
             maxCount: 10,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, highWatermark);
+        Assert.Equal(2, snapshot.EntryHighWatermark);
+        Assert.Equal(2, snapshot.Checkpoint!.Revision);
         Assert.Equal([1L, 2L], entries.Select(entry => entry.EntryId));
         Assert.Equal(
             [LedgerEntryKind.CanonicalPayment, LedgerEntryKind.CanonicalPaymentReversal],

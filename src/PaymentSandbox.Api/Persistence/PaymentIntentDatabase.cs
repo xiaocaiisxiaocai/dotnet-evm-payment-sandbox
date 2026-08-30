@@ -123,7 +123,7 @@ public sealed class PaymentIntentDatabase
             await ExecuteNonQueryAsync(
                 connection,
                 transaction: null,
-                "PRAGMA busy_timeout = 5000;",
+                "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
                 cancellationToken);
             return connection;
         }

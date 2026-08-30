@@ -3,7 +3,7 @@ using PaymentSandbox.Domain.Payments;
 
 namespace PaymentSandbox.Api.PaymentIntents;
 
-public interface IPaymentIntentStore
+public interface IPaymentIntentStore : IPaymentIntentReader
 {
     /// <summary>Atomically creates, replays, or rejects one idempotent operation.</summary>
     /// <remarks>

@@ -7,9 +7,9 @@ A test-only learning and portfolio repository for building reliable EVM payment 
 
 ## Project status
 
-**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-11 complete; Week 12 is next.
+**Current milestone:** Gate A accepted on 2026-08-28; Weeks 2-12 complete; Week 13 is next.
 
-Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, and Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots.
+Gate A was scheduled across Weeks 1-4 and reached its bounded acceptance criteria early at commit [`cb5b5f6`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/commit/cb5b5f617828d14ea167fe0be4162f7d8f8f583e). Remote CI and an isolated Windows fresh clone both passed. Week 2 added executable transaction observation, Week 3 deepened Router behavior evidence, Week 4 made the reviewed contract/interface baseline and clean tracked-source replay machine-checkable, Week 5 introduced the first narrow .NET contract adapter, Week 6 added the first runnable off-chain API boundary, Week 7 made its intent state durable, Week 8 added bounded block/log observation with a durable restart cursor, Week 9 added bounded fork recovery with append-only canonicality history, Week 10 projects that history into append-only provisional effects and explicit reversals, Week 11 adds reversible confirmation-depth qualification over exact caught-up source snapshots, and Week 12 appends explainable per-payment reconciliation reports over atomic Intent/Ledger/Finality snapshots.
 
 Implemented in the current repository:
 
@@ -39,6 +39,9 @@ Implemented in the current repository:
 - `PaymentSandbox.Finality` atomically binds one Indexer head/transition snapshot to a fully caught-up Ledger checkpoint and exact Ledger entry high-watermark.
 - A named confirmation-depth policy appends `confirmation_qualified`; head regression or a Ledger reversal appends a linked `confirmation_revoked`. No mutable finality flag or historical overwrite is used.
 - Finality policy meaning, source snapshots, copied Ledger facts, decisions, and checkpoints are constrained and fingerprinted in a third independently migrated SQLite database.
+- `PaymentSandbox.Reconciliation` compares one explicit `PaymentId` across atomically watermarked Intent, Ledger, and Finality reads without mutating any source.
+- Reconciliation separately records active/matching/qualified occurrence counts, matching and qualified amounts, and stable discrepancy codes for missing intents/payments, reversals, term mismatches, under/overpayment, and incomplete qualification.
+- Reports and complete selected Ledger/Finality evidence are append-only in another migration-owned SQLite database; exact retries verify every durable field while changed facts at the same coordinates fail closed.
 - Verification replays compilation, local deployment, successful payment, and revert from a disposable directory containing only Git-known source and the two direct contract dependencies.
 - The Foundry toolchain is pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
 - Local verification and remote CI check the locked .NET build/tests, Foundry formatting/build/tests, local RPC observation, and committed secrets. Gate A run [`33095409588`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33095409588), Week 2 run [`33102551138`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33102551138), Week 3 run [`33127124223`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33127124223), Week 4 run [`33254032343`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33254032343), Week 5 run [`33257669877`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33257669877), Week 6 run [`33259846122`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33259846122), Week 7 run [`33262105541`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33262105541), Week 8 run [`33263968803`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33263968803), and Week 9 run [`33265607326`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33265607326) each passed all three jobs at their respective milestones.
@@ -46,9 +49,9 @@ Implemented in the current repository:
 
 Deliberately not implemented yet:
 
-- Cross-host database coordination, backup/encryption/tamper evidence, finalized balances, or reconciliation.
+- Cross-host database coordination, backup/encryption/tamper evidence, finalized balances, accounting journals, or settlement authorization.
 - API authentication, authorization, tenant isolation, rate limiting, public hosting, or production data handling.
-- Indexer/Ledger/Finality hosting or scheduling, protocol-native finalized block proofs, application startup wiring, deployment registry, trusted-block/cross-provider checks, completeness proofs, or a public-network Router address.
+- Indexer/Ledger/Finality/Reconciliation hosting or scheduling, protocol-native finalized block proofs, application startup wiring, deployment registry, trusted-block/cross-provider checks, completeness proofs, or a public-network Router address.
 - .NET transaction signing, broadcasting, nonce management, SIWE, or off-chain EIP-712/permit construction and validation.
 - Production token allowlisting, fee-on-transfer/rebasing support, on-chain payment state, pause/admin/upgrade/rescue controls, or an audited deployment.
 - Mainnet support, custody, production key management, or production operations.
@@ -291,6 +294,17 @@ records the Week 11 boundary. GitHub Actions run
 [`33270360367`](https://github.com/xiaocaiisxiaocai/dotnet-evm-payment-sandbox/actions/runs/33270360367)
 passed its locked .NET, Foundry/RPC, and secret-scan jobs.
 
+Week 12 adds `PaymentSandbox.Reconciliation` and a fourth projection database.
+The caller selects one `PaymentId` plus exact Intent publication, Ledger entry,
+and Finality transition watermarks. Reconciliation refuses stale or uncaught-up
+sources, then derives independent counts and amounts instead of a mutable
+`paid` flag. Partial and supplemental occurrences aggregate; excess value,
+wrong token/merchant/chain, missing or reversed payment history, and incomplete
+qualification remain explicit discrepancy codes. Each evaluation copies its
+selected evidence and appends a new report. This is local evidence agreement,
+not token-delivery proof, accounting, protocol finality, or settlement. See the
+[Week 12 reconciliation guide](docs/learning/week-12-reconciliation.md).
+
 ## Architecture rules
 
 - Domain code owns business meaning and invariants, not infrastructure concerns.
@@ -301,7 +315,7 @@ passed its locked .NET, Foundry/RPC, and secret-scan jobs.
 - Raw on-chain values remain exact integers. Formatting is an edge concern.
 - Contract-baseline drift requires explicit interface, bytecode, dependency, and downstream-consumer review.
 
-See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), [Week 6](docs/learning/week-06-payment-intent-api.md), [Week 7](docs/learning/week-07-sqlite-persistence.md), [Week 8](docs/learning/week-08-chain-observation-checkpoints.md), [Week 9](docs/learning/week-09-reorg-canonicality.md), [Week 10](docs/learning/week-10-reversible-ledger.md), and [Week 11](docs/learning/week-11-confirmation-finality.md) learning guides for the rationale and evidence.
+See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/decisions/0001-scope-and-boundaries.md), the [Gate A acceptance record](docs/acceptance/gate-a.md), and the [Week 2](docs/learning/week-02-evm-observation.md), [Week 3](docs/learning/week-03-payment-router-v1.md), [Week 4](docs/learning/week-04-contract-hardening.md), [Week 5](docs/learning/week-05-contract-adapter.md), [Week 6](docs/learning/week-06-payment-intent-api.md), [Week 7](docs/learning/week-07-sqlite-persistence.md), [Week 8](docs/learning/week-08-chain-observation-checkpoints.md), [Week 9](docs/learning/week-09-reorg-canonicality.md), [Week 10](docs/learning/week-10-reversible-ledger.md), [Week 11](docs/learning/week-11-confirmation-finality.md), and [Week 12](docs/learning/week-12-reconciliation.md) learning guides for the rationale and evidence.
 
 ## Roadmap
 
@@ -318,8 +332,8 @@ See [Architecture](docs/architecture.md), the [Scope and boundaries ADR](docs/de
 | Week 9             | **Complete:** bounded common-ancestor recovery, retained fork evidence, append-only canonicality transitions, and atomic checkpoint switching.                                      |
 | Week 10            | **Complete:** independent append-only provisional ledger, linked reorg reversals, source checkpoint/fingerprint idempotency, and cross-database integration evidence.              |
 | Week 11            | **Complete:** named confirmation-depth policy, exact caught-up Indexer/Ledger snapshots, and append-only qualification/revocation history.                                         |
-| Week 12 next       | Add reconciliation and explainable differences without redefining qualification as settlement.                                                                                     |
-| Weeks 13-19        | Add a test-only transaction lifecycle orchestrator, SIWE, and separate EIP-712/permit replay controls.                                                                              |
+| Week 12            | **Complete:** exact Intent/Ledger/Finality snapshots, append-only per-payment reports, evidence copies, and explainable discrepancy codes.                                          |
+| Weeks 13-19 next   | Add a test-only transaction lifecycle orchestrator, SIWE, and separate EIP-712/permit replay controls.                                                                              |
 | Weeks 20-24        | Add observability, fault tests, runbooks, security review, portfolio evidence, and a reproducible `v1.0.0` sample release.                                                          |
 
 Each later capability must arrive with its failure cases and boundary documentation. A roadmap item is not an implemented feature.

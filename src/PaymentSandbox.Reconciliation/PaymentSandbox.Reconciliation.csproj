@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PaymentSandbox.Domain\PaymentSandbox.Domain.csproj" />
+    <ProjectReference Include="..\PaymentSandbox.Finality\PaymentSandbox.Finality.csproj" />
+  </ItemGroup>
+</Project>

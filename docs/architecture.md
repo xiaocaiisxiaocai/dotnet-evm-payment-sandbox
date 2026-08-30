@@ -4,12 +4,12 @@
 
 This document describes two different things on purpose:
 
-1. the implementation through Week 11, including the accepted Gate A baseline; and
+1. the implementation through Week 12, including the accepted Gate A baseline; and
 2. the target architecture that guides later milestones.
 
 Dashed or explicitly labelled components are planned. They must not be read as implemented features.
 
-## Implemented architecture through Week 11
+## Implemented architecture through Week 12
 
 ```mermaid
 flowchart LR
@@ -39,6 +39,11 @@ flowchart LR
     Ledger -. read-only entry log .-> Finality
     Finality --> FinalityDb[(SQLite source copies,<br/>qualification/revocation history,<br/>and checkpoint)]
     Finality --> FinalityTests[Policy + retry + three-database<br/>deep-reorg tests]
+    SQLite -. atomic Intent snapshot .-> Reconcile[PaymentSandbox.Reconciliation]
+    Ledger -. atomic payment entry snapshot .-> Reconcile
+    Finality -. atomic decision snapshot .-> Reconcile
+    Reconcile --> ReconcileDb[(SQLite immutable reports,<br/>evidence copies, and differences)]
+    Reconcile --> ReconcileTests[Classification + replay + five-database<br/>deep-reorg tests]
 
     Foundry[Foundry workspace] --> Router[PaymentRouter + test tokens]
     Router --> ContractChecks[Example, permit, fuzz,<br/>and invariant tests]
@@ -76,6 +81,11 @@ Week 11 adds a third projection database. Finality requires an atomically read
 Indexer head/transition snapshot, a Ledger checkpoint caught up to that exact
 transition watermark, and the exact Ledger entry high-watermark. It appends
 reversible confirmation-policy decisions without changing Ledger history.
+
+Week 12 adds a fourth projection database. Reconciliation selects one
+watermarked Intent lookup, Ledger snapshot, and Finality snapshot; copies exact
+payment evidence; and appends a multidimensional report without mutating any
+upstream state or creating a settlement flag.
 
 ### Build and dependency boundary
 
@@ -243,6 +253,36 @@ Confirmation qualification remains a local, reversible policy result. It is not
 protocol-native finalized/safe evidence, provider honesty, log completeness,
 token delivery, a balance, payout authorization, reconciliation, or settlement.
 
+### Reconciliation boundary
+
+`PaymentSandbox.Reconciliation` consumes `IPaymentIntentReader`,
+`ILedgerEntryReader`, and `IFinalityReader`. Each adapter returns its resource
+and global append high-watermark in one SQLite statement. Reconciliation first
+requires the current reads to equal the caller's explicit snapshots, then
+requires Finality's Ledger entry/revision/Indexer-transition coordinates to
+equal the selected Ledger checkpoint exactly.
+
+One payment evaluation derives active effects from Ledger reversal history and
+current qualification from each effect's latest selected Finality transition.
+Only active effects with the Intent's chain, token, and merchant contribute to
+the matching amount. Individual values remain uint256; repeated compatible
+occurrences aggregate with `BigInteger` so their sum cannot overflow uint256.
+
+The result preserves independent occurrence counts, matching and qualified
+amounts, and stable discrepancy codes. Missing Intent/payment, reversed history,
+chain/token/merchant mismatch, under/overpayment, and incomplete qualification
+can coexist. `IsConsistent` is merely shorthand for an empty discrepancy set.
+
+One serializable transaction appends the report, complete selected Ledger and
+Finality rows, and discrepancy rows. A SHA-256 fingerprint covers policy and
+complete source facts while excluding only local evaluation time. Unknown-result
+and concurrent retries reread every durable field before returning `Replayed`;
+changed facts at identical coordinates fail closed.
+
+These reports explain agreement among local evidence sources. They are not
+token-delivery proof, protocol finality, accounting journals, merchant balances,
+payout authorization, custody, or settlement.
+
 ### Contract boundary
 
 The Foundry workspace is a separate build system pinned to Solidity `0.8.36`, Prague EVM, OpenZeppelin Contracts `v5.7.0`, and forge-std `v1.16.1`.
@@ -256,9 +296,9 @@ The Router is token-agnostic and has no production token policy. An emitted amou
 ## Planned payment architecture
 
 The Router, API, SQLite intent store, bounded Indexer observation/reorg,
-provisional Ledger, and confirmation qualification portions of the following
-diagram exist. Wallet integration, reconciliation, protocol-native finality,
-and signer paths are targets, not current implementations:
+provisional Ledger, confirmation qualification, and reconciliation portions of
+the following diagram exist. Wallet integration, protocol-native finality, and
+signer paths are targets, not current implementations:
 
 ```mermaid
 flowchart LR
@@ -273,6 +313,8 @@ flowchart LR
     Indexer -. exact head snapshot .-> Finality[Confirmation qualification]
     Ledger -. caught-up entry log .-> Finality
     Finality -. policy evidence .-> Reconcile[Reconciliation]
+    API -. watermarked Intent .-> Reconcile
+    Ledger -. watermarked payment effects .-> Reconcile
 
     Orchestrator[Test-only transaction orchestrator] -. policy-approved requests .-> Signer[Signer abstraction]
     Signer -. signed raw transaction .-> Chain
@@ -293,7 +335,7 @@ The later transaction orchestrator is a separate, test-only capability. It must 
 | `PaymentSandbox.Ledger`       | Provisional occurrence effects, linked reversals, and a durable source cursor       | Finality, balances, payouts, Intent mutation, or source-history mutation     |
 | `PaymentSandbox.Finality`     | Reversible confirmation qualification over exact caught-up source snapshots         | Protocol irreversibility, settlement, balances, payouts, or source mutation |
 | `PaymentSandbox.Orchestrator` | Test-only transaction requests, attempts, nonce coordination, replacement history | Custody claims, arbitrary signing                                            |
-| Reconciliation                | Explainable comparisons among intents, chain evidence, ledger, and token evidence | Treating a wallet balance as an accounting ledger                            |
+| `PaymentSandbox.Reconciliation` | Explainable snapshot comparisons among Intent, Ledger, and Finality evidence    | Settlement, balances, payouts, source mutation, or claiming token delivery   |
 | Solidity contracts            | Direct payer-to-merchant transfer, exact permit path, and payment event semantics | Accepted-token policy, off-chain invoices, finality, reconciliation, custody |
 
 Dependencies point inward toward Domain. Infrastructure implements interfaces defined around use cases; Domain does not import an infrastructure SDK to make an adapter convenient.
@@ -314,9 +356,10 @@ Most of these remain roadmap invariants. The current code establishes exact
 value types, a narrow non-custodial contract boundary, executable contract
 failure cases, a bounded .NET identity gate, durable local business idempotency,
 append-only chain observations, bounded fork recovery, provisional linked
-effect/reversal history, and reversible confirmation-depth qualification. It
-does not implement protocol-native finality, reconciliation, balances, payout
-authorization, or off-chain settlement.
+effect/reversal history, reversible confirmation-depth qualification, and
+append-only explainable reconciliation reports. It does not implement
+protocol-native finality, token-delivery proof, balances, payout authorization,
+or off-chain settlement.
 
 ## Trust boundaries
 
@@ -331,12 +374,13 @@ Current and future code must treat the following as untrusted input:
 
 CI intentionally needs no external RPC endpoint or signing secret. Week 5
 identity tests use an in-memory fake, Week 7 API tests use real Kestrel listeners
-and isolated temporary SQLite files, and Weeks 8-11 combine fake-RPC/fork tests
+and isolated temporary SQLite files, and Weeks 8-12 combine fake-RPC/fork tests
 with a loopback raw JSON-RPC/ABI fixture and real temporary SQLite files. These
 exercise protocol mapping, migration, restart, constraints, exact retry,
 concurrent scanners/ledger writers, range/reorg/ledger limits, fork retention,
 atomic branch switching, cross-database effect/reversal projection, and a
-three-database deep-reorg qualification revocation; see [Threat
+three-database deep-reorg qualification revocation, and a five-database
+reconciliation history across that reorg; see [Threat
 model](threat-model.md) for the active and residual controls.
 
 ## Verification boundary

@@ -53,6 +53,29 @@ internal static class PaymentIntentDatabaseMigrations
                 created_at_utc TEXT NOT NULL
             ) STRICT;
             """),
+        new(
+            Version: 2,
+            Name: "add_intent_publication_log",
+            Sql:
+            """
+            CREATE TABLE payment_intent_publications (
+                publication_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                payment_id TEXT NOT NULL UNIQUE,
+                FOREIGN KEY (payment_id) REFERENCES payment_intents (payment_id)
+                    ON DELETE RESTRICT
+            ) STRICT;
+
+            INSERT INTO payment_intent_publications (payment_id)
+            SELECT payment_id FROM payment_intents
+            ORDER BY created_at_utc, payment_id;
+
+            CREATE TRIGGER publish_payment_intent
+            AFTER INSERT ON payment_intents
+            BEGIN
+                INSERT INTO payment_intent_publications (payment_id)
+                VALUES (NEW.payment_id);
+            END;
+            """),
     ];
 }
 

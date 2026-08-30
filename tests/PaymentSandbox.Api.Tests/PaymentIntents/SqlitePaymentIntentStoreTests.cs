@@ -27,16 +27,17 @@ public sealed class SqlitePaymentIntentStoreTests
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT m.version, m.name, s.sql
-            FROM schema_migrations AS m
-            JOIN sqlite_schema AS s ON s.name = 'payment_intents';
+            SELECT
+                (SELECT COUNT(*) FROM schema_migrations),
+                (SELECT sql FROM sqlite_schema WHERE name = 'payment_intents'),
+                (SELECT sql FROM sqlite_schema WHERE name = 'payment_intent_publications');
             """;
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(
             TestContext.Current.CancellationToken);
 
         Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(1, reader.GetInt64(0));
-        Assert.Equal("create_payment_intents", reader.GetString(1));
+        Assert.Equal(2, reader.GetInt64(0));
+        Assert.Contains("STRICT", reader.GetString(1), StringComparison.OrdinalIgnoreCase);
         Assert.Contains("STRICT", reader.GetString(2), StringComparison.OrdinalIgnoreCase);
         Assert.False(await reader.ReadAsync(TestContext.Current.CancellationToken));
     }
@@ -209,6 +210,68 @@ public sealed class SqlitePaymentIntentStoreTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(PaymentIntentCreateDisposition.Created, retry.Disposition);
+    }
+
+    [Fact]
+    public async Task Snapshot_AtomicallyBindsLookupToPublicationHighWatermark()
+    {
+        await using var temporary = new TemporarySqliteDatabase();
+        PaymentIntentDatabase database = CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        var store = new SqlitePaymentIntentStore(database);
+        PaymentIntent first = CreateIntent();
+        PaymentIntent second = CreateIntent();
+        await store.CreateOrGetAsync(ParseKey("snapshot-first"), first, TestContext.Current.CancellationToken);
+        await store.CreateOrGetAsync(ParseKey("snapshot-second"), second, TestContext.Current.CancellationToken);
+
+        PaymentIntentReadSnapshot found = await store.GetSnapshotAsync(
+            first.Id, TestContext.Current.CancellationToken);
+        PaymentIntentReadSnapshot missing = await store.GetSnapshotAsync(
+            PaymentId.New(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(first, found.Intent);
+        Assert.Equal(1, found.PublicationId);
+        Assert.Equal(2, found.PublicationHighWatermark);
+        Assert.Null(missing.Intent);
+        Assert.Null(missing.PublicationId);
+        Assert.Equal(2, missing.PublicationHighWatermark);
+    }
+
+    [Fact]
+    public async Task VersionOneUpgrade_BackfillsExistingIntentPublication()
+    {
+        await using var temporary = new TemporarySqliteDatabase();
+        PaymentIntentDatabase database = CreateDatabase(temporary.DatabasePath);
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        var store = new SqlitePaymentIntentStore(database);
+        PaymentIntent existing = CreateIntent();
+        await store.CreateOrGetAsync(
+            ParseKey("pre-publication-migration"),
+            existing,
+            TestContext.Current.CancellationToken);
+
+        // Recreate the durable shape immediately before migration 2 while
+        // retaining the version-1 intent row that must be backfilled.
+        await using (SqliteConnection connection = await database.OpenConnectionAsync(
+            TestContext.Current.CancellationToken))
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                """
+                DROP TRIGGER publish_payment_intent;
+                DROP TABLE payment_intent_publications;
+                DELETE FROM schema_migrations WHERE version = 2;
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        await database.InitializeAsync(TestContext.Current.CancellationToken);
+        PaymentIntentReadSnapshot snapshot = await store.GetSnapshotAsync(
+            existing.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(existing, snapshot.Intent);
+        Assert.Equal(1, snapshot.PublicationId);
+        Assert.Equal(1, snapshot.PublicationHighWatermark);
     }
 
     [Fact]

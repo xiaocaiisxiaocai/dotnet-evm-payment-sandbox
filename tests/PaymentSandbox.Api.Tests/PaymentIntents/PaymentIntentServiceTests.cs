@@ -134,5 +134,17 @@ public sealed class PaymentIntentServiceTests
             FoundWithId = paymentId;
             return ValueTask.FromResult(FoundIntent);
         }
+
+        public ValueTask<PaymentIntentReadSnapshot> GetSnapshotAsync(
+            PaymentId paymentId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(new PaymentIntentReadSnapshot(
+                paymentId,
+                FoundIntent,
+                FoundIntent is null ? 0 : 1,
+                FoundIntent is null ? null : 1));
+        }
     }
 }

@@ -86,6 +86,38 @@ public sealed class SqlitePaymentIntentStore(PaymentIntentDatabase database)
         return await reader.ReadAsync(cancellationToken) ? ReadIntent(reader) : null;
     }
 
+    public async ValueTask<PaymentIntentReadSnapshot> GetSnapshotAsync(
+        PaymentId paymentId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paymentId);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        // The scalar high-watermark and optional intent row belong to one SQLite
+        // statement, so "missing" cannot be paired with a later publication ID.
+        command.CommandText =
+            """
+            SELECT i.payment_id, i.chain_id, i.token_address, i.merchant_address,
+                   i.amount_raw, i.status, i.created_at_utc, p.publication_id,
+                   (SELECT COALESCE(MAX(publication_id), 0)
+                    FROM payment_intent_publications) AS publication_high_watermark
+            FROM (SELECT 1) AS singleton
+            LEFT JOIN payment_intent_publications AS p ON p.payment_id = $paymentId
+            LEFT JOIN payment_intents AS i ON i.payment_id = p.payment_id;
+            """;
+        command.Parameters.AddWithValue("$paymentId", paymentId.Value);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The singleton intent snapshot query returned no row.");
+        }
+
+        PaymentIntent? intent = reader.IsDBNull(0) ? null : ReadIntent(reader);
+        long? publicationId = reader.IsDBNull(7) ? null : reader.GetInt64(7);
+        return new PaymentIntentReadSnapshot(paymentId, intent, reader.GetInt64(8), publicationId);
+    }
+
     private static async Task<int> TryInsertAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
